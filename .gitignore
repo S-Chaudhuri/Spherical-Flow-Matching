@@ -1,0 +1,32 @@
+# system / home
+.*
+
+# exceptions (allow these)
+!.gitignore
+!requirements.txt
+!riemannian-fm/
+!HAE/
+!hyper_env.yaml
+
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# data & outputs
+HAE/inference_out/inference_results/
+HAE/inference_images/
+HAE/logs/
+HAE/output/
+HAE/output_animals/
+HAE/output_flowers_c2/
+HAE/output_gpu/
+HAE/pretrained_models/
+HAE/proj/
+HAE/wandb/
+riemannian-fm/logs/
+riemannian-fm/outputs/
+
+
+
+
