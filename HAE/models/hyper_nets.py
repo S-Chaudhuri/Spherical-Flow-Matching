@@ -112,7 +112,7 @@ class HyperbolicMLR(torch.nn.Module):
             c = torch.as_tensor(self.c).type_as(x)
         else:
             c = torch.as_tensor(c).type_as(x)
-        p_vals_poincare = gmath.expmap0(self.p_vals, k=torch.tensor(-1.0))
+        p_vals_poincare = gmath.expmap0(self.p_vals, k=c) #k=torch.tensor(-1.0))
         conformal_factor = 1 - c * p_vals_poincare.pow(2).sum(dim=1, keepdim=True)
         a_vals_poincare = self.a_vals * conformal_factor
         logits = hyperbolic_softmax(x, a_vals_poincare, p_vals_poincare, c)

@@ -7,6 +7,7 @@
 !riemannian-fm/
 !HAE/
 !hyper_env.yaml
+!HAE/proj/extract_animalfaces.py
 
 # python
 __pycache__/
