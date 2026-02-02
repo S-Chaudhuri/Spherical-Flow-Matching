@@ -73,7 +73,8 @@ def run():
     dataloader = DataLoader(dataset,
                             batch_size=opts.test_batch_size,
                             shuffle=False,
-                            num_workers=int(opts.test_workers),
+                            num_workers=0, #int(opts.test_workers),  # Changed this
+                            pin_memory=False, # added this
                             drop_last=True)
 
     if opts.n_images is None:
@@ -124,10 +125,10 @@ def run():
                     # otherwise, save the original and output
                     res = np.concatenate([np.array(input_im.resize(resize_amount)),
                                           np.array(result.resize(resize_amount))], axis=1)
-                Image.fromarray(res).save(os.path.join(out_path_coupled, os.path.basename(im_path)))
+                #Image.fromarray(res).save(os.path.join(out_path_coupled, os.path.basename(im_path)))
 
             im_save_path = os.path.join(out_path_results, os.path.basename(im_path))
-            Image.fromarray(np.array(result)).save(im_save_path)
+            #Image.fromarray(np.array(result)).save(im_save_path)
 
             global_i += 1
 

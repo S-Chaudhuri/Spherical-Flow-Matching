@@ -260,9 +260,11 @@ class HyperbolicImages(Dataset):
         """
         self.emb = torch.tensor(torch.load(emb_path)).float()
 
-        # Ensure shapes [N,512]
+        # Ensure shapes [N, D]
         if self.emb.ndim == 1:
             self.emb = self.emb.unsqueeze(0)
+        elif self.emb.ndim > 2:
+            self.emb = self.emb.reshape(self.emb.shape[0], -1)
 
         self.labels = None
         if label_path is not None:
@@ -278,7 +280,7 @@ class HyperbolicImages(Dataset):
     
     def __getitem__(self, idx, dim=512):
 
-        x1 = self.emb[idx]
+        x1 = self.emb[idx].reshape(-1)
 
         if self.pair_mode == "none":
             return {"x1": x1}

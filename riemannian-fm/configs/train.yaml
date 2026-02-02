@@ -11,9 +11,10 @@ rna_datadir: /checkpoint/${oc.env:USER}/data/rna
 top500_datadir: /checkpoint/${oc.env:USER}/data/top500
 mesh_datadir: /checkpoint/${oc.env:USER}/data/mesh
 data_seed: null  # seed for creating the data splits. By default, uses global seed.
-euclidean_datadir: /home/fvaleau/HAE/proj/umap_flowers/euc_embed_tv
-#images_datadir: /home/fvaleau/HAE/proj/animal_embedding/embed
-images_datadir: /home/fvaleau/HAE/proj/flowers_emb_3.0/embed
+#euclidean_datadir: /home/fvaleau/HAE/proj/umap_flowers/euc_embed_tv
+euclidean_datadir: /home/fvaleau/HAE/proj/animals_emb_1/euc_embed_flat
+images_datadir: /home/fvaleau/HAE/proj/animals_emb_5/embed
+#images_datadir: /home/fvaleau/HAE/proj/flowers_emb_10/embed
 images_labels: /home/fvaleau/HAE/proj/umap_flowers/labels
 images_datadir_A: /home/fvaleau/HAE/proj/selected_embeddings/100
 images_datadir_B: /home/fvaleau/HAE/proj/selected_embeddings/102
