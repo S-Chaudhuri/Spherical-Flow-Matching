@@ -40,7 +40,7 @@ dataset = args.dataset
 emb_name = args.emb_name
 model_path = args.model_path
 
-'''
+
 #model_path = f"/scratch-shared/fvaleau/output_{model_path}/checkpoints/best_model.pt"
 ckpt = torch.load(model_path, map_location='cpu')
 opts = ckpt['opts']
@@ -51,7 +51,7 @@ if 'learn_in_w' not in opts:
     opts['learn_in_w'] = False
 
 # COMMENT THE FOLLOWING LINE IF DECODING POINCARE SAMPLES
-opts['learn_in_w'] = False
+#opts['learn_in_w'] = False
 
 # instantialize model with checkpoints and args
 opts = Namespace(**opts)
@@ -63,7 +63,7 @@ print('Model successfully loaded!')
 
 #samples = torch.load(f"/home/fvaleau/riemannian-fm/{emb_name}")
 samples = torch.load(f"/scratch-shared/fvaleau/FID/{emb_name}")
-samples = samples.reshape(49980, 18, 512)     # to comment
+#samples = samples.reshape(49980, 18, 512)     # to comment
 decoded_images = []
 os.makedirs(f"/scratch-shared/fvaleau/FID/{dataset}_generated/{emb_name}", exist_ok=True)
 
@@ -89,25 +89,25 @@ for i,z in enumerate(samples):
         #z = rescale(6.2126, z)
 
     # this is for decoding poincare samples!!!
-    # with torch.no_grad():
-    #     img, _, _, _, _ = net.forward(
-    #         x = z.unsqueeze(0),
-    #         codes=None,
-    #         batch_size=1,
-    #         input_feature=True,
-    #         input_code=False
-    #     )
-    # img_cpu = img.squeeze(0).cpu()
-
-    # decoding euclidean samples (W+) --- TO BE CHANGED ACCORDINGLY TO LATER LINES
     with torch.no_grad():
         img, _, _, _, _ = net.forward(
             x = z.unsqueeze(0),
-            randomize_noise=False,
-            input_feature=False,
-            input_code=True
+            codes=None,
+            batch_size=1,
+            input_feature=True,
+            input_code=False
         )
     img_cpu = img.squeeze(0).cpu()
+
+    # decoding euclidean samples (W+) 
+    # with torch.no_grad():
+    #     img, _, _, _, _ = net.forward(
+    #         x = z.unsqueeze(0),
+    #         randomize_noise=False,
+    #         input_feature=False,
+    #         input_code=True
+    #     )
+    # img_cpu = img.squeeze(0).cpu()
     pil_img = tensor2im(img_cpu.squeeze(0))
     pil_img.save(f"/scratch-shared/fvaleau/FID/{dataset}_generated/{emb_name}/fm_sample_{i+1}.png")
     del img
@@ -117,15 +117,8 @@ for i,z in enumerate(samples):
         print(f"Decoded {i+1}/{len(samples)} images")
         torch.cuda.empty_cache()
 
-    #decoded_images.append(img)
-    
+    #decoded_images.append(img)    
 
-
-
-
-#for i in range(len(decoded_images)):
-    
-'''
 
 gen_dir = f"/scratch-shared/fvaleau/FID/{dataset}_generated/{emb_name}"
 new_test = f"/scratch-shared/fvaleau/FID/{dataset}_train"
