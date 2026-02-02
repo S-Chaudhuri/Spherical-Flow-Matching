@@ -8,6 +8,7 @@
 #SBATCH --time=4:00:00
 #SBATCH --output=/home/fvaleau/HAE/logs/out-%x.%A.out
 #SBATCH --error=/home/fvaleau/HAE/logs/err-%x.%A.err
+#SBATCH --mem=64G
 
 
 module purge
@@ -84,21 +85,44 @@ cd /gpfs/home6/fvaleau/HAE
 # THIS IS THE RIGHT JOB SCRIPT, NOT VISUALIZE
 #--checkpoint_path /home/fvaleau/HAE/pretrained_models/hae_flowers.pt \
 
-python scripts/inference_umap.py \
-    --exp_dir proj/flowers_emb_0.5.0 \
-    --checkpoint_path /scratch-shared/fvaleau/output_flowers_c0.5.0/checkpoints/best_model.pt \
-    --data_path /home/fvaleau/HAE/proj/flowers/train \
-    --test_batch_size 1
+# python scripts/inference_umap.py \
+#     --exp_dir proj/flowers_emb_10 \
+#     --checkpoint_path /scratch-shared/fvaleau/output_flowers_c10.0/checkpoints/best_model.pt \
+#     --data_path /home/fvaleau/HAE/proj/flowers/train \
+#     --test_batch_size 1
+
+# python scripts/inference_umap.py \
+#     --exp_dir proj/animals_emb_0.5 \
+#     --checkpoint_path /scratch-shared/fvaleau/output_animals_c0.5/checkpoints/best_model.pt \
+#     --data_path /home/fvaleau/HAE/proj/animal_faces \
+#     --test_batch_size 1
+
+# python scripts/inference_umap.py \
+#     --exp_dir proj/animals_emb_1 \
+#     --checkpoint_path /scratch-shared/fvaleau/output_animals_c1/checkpoints/best_model.pt \
+#     --data_path /home/fvaleau/HAE/proj/animal_faces \
+#     --test_batch_size 1
+
+# python scripts/inference_umap.py \
+#     --exp_dir proj/animals_emb_2 \
+#     --checkpoint_path /scratch-shared/fvaleau/output_animals_c2/checkpoints/best_model.pt \
+#     --data_path /home/fvaleau/HAE/proj/animal_faces \
+#     --test_batch_size 1
+
+# python scripts/inference_umap.py \
+#     --exp_dir proj/animals_emb_3 \
+#     --checkpoint_path /scratch-shared/fvaleau/output_animals_c3/checkpoints/best_model.pt \
+#     --data_path /home/fvaleau/HAE/proj/animal_faces \
+#     --test_batch_size 1
 
 python scripts/inference_umap.py \
-    --exp_dir proj/flowers_emb_2.0 \
-    --checkpoint_path /scratch-shared/fvaleau/output_flowers_c2.0/checkpoints/best_model.pt \
-    --data_path /home/fvaleau/HAE/proj/flowers/train \
+    --exp_dir proj/animals_emb_5 \
+    --checkpoint_path /scratch-shared/fvaleau/output_animals_c5.0/checkpoints/best_model.pt \
+    --data_path /home/fvaleau/HAE/proj/animal_faces \
     --test_batch_size 1
 
-python scripts/inference_umap.py \
-    --exp_dir proj/flowers_emb_3.0 \
-    --checkpoint_path /scratch-shared/fvaleau/output_flowers_c3.0/checkpoints/best_model.pt \
-    --data_path /home/fvaleau/HAE/proj/flowers/train \
-    --test_batch_size 1
-
+# python scripts/inference_umap.py \
+#     --exp_dir proj/animals_emb_10.0 \
+#     --checkpoint_path /scratch-shared/fvaleau/output_animals_c5.0/checkpoints/best_model.pt \
+#     --data_path /home/fvaleau/HAE/proj/animal_faces \
+#     --test_batch_size 1
