@@ -1,19 +1,56 @@
-"""
-This file defines the core research contribution
-"""
+
 from audioop import bias
 import matplotlib
 matplotlib.use('Agg')
 import math
-import geoopt.manifolds.stereographic.math as gmath
+# import geoopt.manifolds.stereographic.math as gmath
+
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 from models.encoders import psp_encoders
 from models.stylegan2.model import Generator
-from models.hyper_nets import MobiusLinear, HyperbolicMLR
+# from models.hyper_nets import MobiusLinear, HyperbolicMLR
 from configs.paths_config import model_paths
+
+
+def vector_rms_norm(z, zero_mean=False, eps=1e-6, curvature=1.0):
+    """
+    L2 normalization to project vectors to sphere with given curvature.
+    Curvature k > 0: sphere with radius r = 1/sqrt(k)
+    From reference, adapted for variable curvature.
+    """
+    assert z.ndim >= 2
+    dim = tuple(range(1, z.ndim))
+    if zero_mean:
+        z = z - z.mean(dim=dim, keepdim=True)
+    # Compute L2 norm
+    norm = torch.sqrt(z.square().sum(dim=dim, keepdim=True) + eps)
+    # Normalize to unit sphere first, then scale to desired radius
+    radius = 1.0 / torch.sqrt(torch.tensor(curvature, dtype=z.dtype, device=z.device))
+    return z * (radius / norm)
+
+
+def vector_compute_magnitude(x):
+    """Compute L2 norm (from reference)"""
+    assert x.ndim >= 2
+    reduce_dims = tuple(range(1, x.ndim))
+    mag = x.square().sum(dim=reduce_dims, keepdim=True).sqrt()
+    return mag
+
+
+def vector_compute_angle(x, y):
+    """Compute angle between two vectors on sphere (from reference)"""
+    assert x.ndim >= 2
+    assert x.shape == y.shape
+    reduce_dims = tuple(range(1, x.ndim))
+    dot = (x * y).sum(dim=reduce_dims, keepdim=True)
+    mag = vector_compute_magnitude(x) * vector_compute_magnitude(y)
+    mag = torch.clamp(mag, min=1e-6)
+    cos_sim = torch.clamp(dot / mag, min=-1.0, max=1.0)
+    angle = torch.acos(cos_sim) / math.pi * 180.0
+    return angle
 
 
 def get_keys(d, name):
@@ -249,8 +286,11 @@ class hae(nn.Module):
     def __init__(self, opts):
         super(hae, self).__init__()
         self.set_opts(opts)
-        self.curvature = torch.tensor(self.opts.hyperbolic_curvature, dtype=torch.float32)
-
+        
+        # Spherical curvature parameter: k > 0 gives sphere of radius 1/sqrt(k)
+        # k = 1.0 is unit sphere, higher k = smaller radius, lower k = larger radius
+        self.curvature = torch.tensor(self.opts.spherical_curvature, dtype=torch.float32)
+        
         # compute number of style inputs based on the output resolution
         self.opts.n_styles = int(math.log(self.opts.output_size, 2)) * 2 - 2
         # Define architecture
@@ -266,17 +306,14 @@ class hae(nn.Module):
             Exception(f'{self.opts.dataset_type} is not a valid dataset_type')
         self.mlp_encoder = MLP_encoder(128)
         self.mlp_decoder = MLP_decoder(128)
-        #self.mlp = MLP(512)
-        self.hyperbolic_linear = MobiusLinear(self.feature_shape,
-                                              self.feature_shape,
-                                              # This computes an exmap0 after the operation, where the linear
-                                              # operation operates in the Euclidean space.
-                                              hyperbolic_input=False,
-                                              hyperbolic_bias=True,
-                                              nonlin=None,  # For now
-                                              k=self.curvature             #CURVATURE
-                                            )
-        self.mlr = HyperbolicMLR(ball_dim=self.feature_shape, n_classes=self.num_classes, c=self.curvature.abs()) #CURVATURE
+        
+    
+        self.spherical_linear = nn.Linear(self.feature_shape, self.feature_shape)
+        
+        # Using learned class prototypes with cosine similarity approach
+        self.class_prototypes = nn.Parameter(torch.randn(self.num_classes, self.feature_shape))
+        nn.init.kaiming_uniform_(self.class_prototypes, a=math.sqrt(5))
+        
         self.decoder = Generator(self.opts.output_size, 512, 8)
         self.face_pool = torch.nn.AdaptiveAvgPool2d((256, 256))
         # Load weights if needed
@@ -303,12 +340,16 @@ class hae(nn.Module):
                 name = k.replace('module.','') 
                 new_state_dict[name] = v
             ckpt['state_dict'] = new_state_dict
-            self.hyperbolic_linear.load_state_dict(get_keys(ckpt, 'hyperbolic_linear'), strict=True)
-            self.mlr.load_state_dict(get_keys(ckpt, 'mlr'), strict=True)
-            self.mlp_encoder.load_state_dict(get_keys(ckpt, 'mlp_encoder'), strict=True)
-            self.mlp_decoder.load_state_dict(get_keys(ckpt, 'mlp_decoder'), strict=True)
-            self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=True)
-            self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=True)
+            # Load converted layers (hyperbolic_linear -> spherical_linear, mlr -> class_prototypes)
+            self.spherical_linear.load_state_dict(get_keys(ckpt, 'spherical_linear'), strict=False)
+            try:
+                self.class_prototypes.data = get_keys(ckpt, 'class_prototypes')['data']
+            except:
+                pass  # May not exist if converting from hyperbolic checkpoint
+            self.mlp_encoder.load_state_dict(get_keys(ckpt, 'mlp_encoder'), strict=False)
+            self.mlp_decoder.load_state_dict(get_keys(ckpt, 'mlp_decoder'), strict=False)
+            self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=False)
+            self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=False)
             self.__load_latent_avg(ckpt)
         else:
             print('Loading pSp from checkpoint: {}'.format(self.opts.psp_checkpoint_path))
@@ -319,8 +360,8 @@ class hae(nn.Module):
                 name = k.replace('.module','') 
                 new_state_dict[name] = v
             ckpt['state_dict'] = new_state_dict
-            self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=True)
-            self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=True)
+            self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=False)
+            self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=False)
             self.__load_latent_avg(ckpt)
 
     def forward(self, x, y = None, batch_size=4, resize=True, latent_mask=None, input_code=False, randomize_noise=True,
@@ -340,7 +381,9 @@ class hae(nn.Module):
             ocodes = codes
             feature = self.mlp_encoder(ocodes)
             feature_reshape = torch.flatten(feature, start_dim=1)
-            feature_dist = self.hyperbolic_linear(feature_reshape)
+            # Spherical projection: linear -> sphere projection with curvature
+            feature_dist = self.spherical_linear(feature_reshape)
+            feature_dist = vector_rms_norm(feature_dist, curvature=self.curvature.item())
 
         else:
             feature_dist = x
@@ -352,10 +395,16 @@ class hae(nn.Module):
                 else:
                     codes = codes + self.latent_avg.repeat(codes.shape[0], 1, 1)
 
-
         
-        logits = F.log_softmax(self.mlr(feature_dist, self.mlr.c), dim=-1)
-        feature_euc = gmath.logmap0(feature_dist, k=self.curvature) # CURVATURE
+        # Compute logits using cosine similarity with class prototypes
+        # feature_dist: [B, D], class_prototypes: [num_classes, D]
+        normalized_prototypes = vector_rms_norm(self.class_prototypes, curvature=self.curvature.item())
+        # Both vectors are on sphere, compute cosine similarity (dot product)
+        logits = torch.mm(feature_dist, normalized_prototypes.t())  # [B, num_classes]
+        logits = F.log_softmax(logits, dim=-1)
+        
+        # For model output, feature_euc is just the spherical feature (not decoding to euclidean)
+        feature_euc = feature_dist
         feature_euc = self.mlp_decoder(feature_euc)
         codes = feature_euc
         #codes = torch.cat((feature_euc, codes[:, 6:]), dim=1)

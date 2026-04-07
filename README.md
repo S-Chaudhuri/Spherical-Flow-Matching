@@ -62,7 +62,7 @@ It activates `hyper_env` and runs `python scripts/train.py` with the full set of
 - `--dataset_type` (e.g. `animalfaces_encode_eva`, `flowers_encode_eva`)
 - `--psp_checkpoint_path` (points into `HAE/pretrained_models/`)
 - `--exp_dir` (output directory for checkpoints/logs)
-- `--hyperbolic_curvature` (insert a negative value)
+- `--spherical_curvature` (positive value for sphere radius: 1/sqrt(k))
 - `--hyperbolic_lambda` and `--reverse_lambda` (loss weights)
 
 Example (from `HAE/run_train.sh`):
@@ -86,11 +86,11 @@ python scripts/train.py \
   --image_interval=1000 \
   --hyperbolic_lambda=0.3 \
   --reverse_lambda=1 \
-  --hyperbolic_curvature=-5 \
+  --spherical_curvature=1.0 \
   --use_wandb
 ```
 
-## 4) Inference (Extract Hyperbolic + Euclidean Embeddings)
+## 4) Inference (Extract Spherical + Euclidean Embeddings)
 
 The inference job script is:
 

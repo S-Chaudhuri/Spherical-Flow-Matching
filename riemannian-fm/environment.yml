@@ -1,11 +1,14 @@
 name: manifm
 channels:
   - pytorch
-  - conda-forge
   - nvidia
+  - conda-forge
+  - defaults
 dependencies:
   - python=3.9
   - pytorch
+  - torchvision
+  - torchaudio
   - pytorch-cuda=11.7
   - igl
   - meshplot
@@ -25,7 +28,6 @@ dependencies:
     - torchdiffeq
     - scikit-learn
     - pytorch-lightning==1.8.5.post0
-    - torchdiffeq
     - hydra-core==1.2.0
     - hydra-submitit-launcher==1.2.0
     - hydra_colorlog==1.2.0

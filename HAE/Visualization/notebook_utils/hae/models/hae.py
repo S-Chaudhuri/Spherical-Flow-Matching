@@ -1,20 +1,32 @@
 """
 This file defines the core research contribution
-# ADDED FOR CURVATURE ADDITIONS
 """
 from audioop import bias
 import matplotlib
 matplotlib.use('Agg')
 import math
-import geoopt.manifolds.stereographic.math as gmath
+# import geoopt.manifolds.stereographic.math as gmath
 
 import torch
 from torch import nn
 import torch.nn.functional as F
 from models.encoders import psp_encoders
 from models.stylegan2.model import Generator
-from models.hyper_nets import MobiusLinear, HyperbolicMLR
+# from models.hyper_nets import MobiusLinear, HyperbolicMLR
 from configs.paths_config import model_paths
+
+
+def vector_rms_norm(z, zero_mean=False, eps=1e-6, curvature=1.0):
+	"""L2 normalization to project vectors to sphere with given curvature."""
+	assert z.ndim >= 2
+	dim = tuple(range(1, z.ndim))
+	if zero_mean:
+		z = z - z.mean(dim=dim, keepdim=True)
+	# Compute L2 norm
+	norm = torch.sqrt(z.square().sum(dim=dim, keepdim=True) + eps)
+	# Normalize to unit sphere first, then scale to desired radius
+	radius = 1.0 / torch.sqrt(torch.tensor(curvature, dtype=z.dtype, device=z.device))
+	return z * (radius / norm)
 
 
 def get_keys(d, name):
@@ -116,8 +128,8 @@ class hae(nn.Module):
 	def __init__(self, opts):
 		super(hae, self).__init__()
 		self.set_opts(opts)
-		# ADDED: curvature
-		self.curvature = torch.tensor(self.opts.hyperbolic_curvature, dtype=torch.float32)
+		# Spherical curvature parameter
+		self.curvature = torch.tensor(self.opts.spherical_curvature, dtype=torch.float32)
 		# compute number of style inputs based on the output resolution
 		self.opts.n_styles = int(math.log(self.opts.output_size, 2)) * 2 - 2
 		# Define architecture
@@ -131,22 +143,14 @@ class hae(nn.Module):
 			Exception(f'{self.opts.dataset_type} is not a valid dataset_type')
 		self.mlp_encoder = MLP_encoder(128)
 		self.mlp_decoder = MLP_decoder(128)
-		#self.mlp = MLP(512)
-		self.hyperbolic_linear = MobiusLinear(self.feature_shape,
-											  self.feature_shape,
-											  # This computes an exmap0 after the operation, where the linear
-											  # operation operates in the Euclidean space.
-											  hyperbolic_input=False,
-											  hyperbolic_bias=True,
-											  nonlin=None,  # For now
-											  k = self.curvature # ADDED
-											)
-		# ADDED
-		#self.mlr = HyperbolicMLR(ball_dim=self.feature_shape, n_classes=self.num_classes, c=1)
-		self.mlr = HyperbolicMLR(ball_dim=self.feature_shape, n_classes=self.num_classes, c=self.curvature.abs())
-		self.decoder = Generator(self.opts.output_size, 512, 8)
-		self.face_pool = torch.nn.AdaptiveAvgPool2d((256, 256))
-		# Load weights if needed
+		
+		# Spherical linear layer
+		self.spherical_linear = nn.Linear(self.feature_shape, self.feature_shape)
+		
+		# Spherical classification layer
+		self.class_prototypes = nn.Parameter(torch.randn(self.num_classes, self.feature_shape))
+		nn.init.kaiming_uniform_(self.class_prototypes, a=math.sqrt(5))
+		
 		self.load_weights()
 
 	def set_encoder(self):
@@ -170,12 +174,15 @@ class hae(nn.Module):
 				name = k.replace('module.','') 
 				new_state_dict[name] = v
 			ckpt['state_dict'] = new_state_dict
-			self.hyperbolic_linear.load_state_dict(get_keys(ckpt, 'hyperbolic_linear'), strict=True)
-			self.mlr.load_state_dict(get_keys(ckpt, 'mlr'), strict=True)
-			self.mlp_encoder.load_state_dict(get_keys(ckpt, 'mlp_encoder'), strict=True)
-			self.mlp_decoder.load_state_dict(get_keys(ckpt, 'mlp_decoder'), strict=True)
-			self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=True)
-			self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=True)
+			self.spherical_linear.load_state_dict(get_keys(ckpt, 'spherical_linear'), strict=False)
+			try:
+				self.class_prototypes.data = get_keys(ckpt, 'class_prototypes')['data']
+			except:
+				pass
+			self.mlp_encoder.load_state_dict(get_keys(ckpt, 'mlp_encoder'), strict=False)
+			self.mlp_decoder.load_state_dict(get_keys(ckpt, 'mlp_decoder'), strict=False)
+			self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=False)
+			self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=False)
 			self.__load_latent_avg(ckpt)
 		else:
 			print('Loading pSp from checkpoint: {}'.format(self.opts.psp_checkpoint_path))
@@ -186,8 +193,8 @@ class hae(nn.Module):
 				name = k.replace('.module','') 
 				new_state_dict[name] = v
 			ckpt['state_dict'] = new_state_dict
-			self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=True)
-			self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=True)
+			self.encoder.load_state_dict(get_keys(ckpt, 'encoder'), strict=False)
+			self.decoder.load_state_dict(get_keys(ckpt, 'decoder'), strict=False)
 			self.__load_latent_avg(ckpt)
 
 	def forward(self, x, batch_size=4, resize=True, latent_mask=None, input_code=False, randomize_noise=True,
@@ -206,11 +213,15 @@ class hae(nn.Module):
 		ocodes = codes[:, :6]
 		feature = self.mlp_encoder(ocodes)
 		feature_reshape = torch.flatten(feature, start_dim=1)
-		feature_dist = self.hyperbolic_linear(feature_reshape)
-		logits = F.log_softmax(self.mlr(feature_dist, self.mlr.c), dim=-1)
-		# ADDED 
-		feature_euc = gmath.logmap0(feature_dist, k=self.curvature)
-		#feature_euc = gmath.logmap0(feature_dist, k=torch.tensor(-1.))
+		feature_dist = self.spherical_linear(feature_reshape)
+		feature_dist = vector_rms_norm(feature_dist, curvature=self.curvature.item())
+		
+		# Spherical classification
+		normalized_prototypes = vector_rms_norm(self.class_prototypes, curvature=self.curvature.item())
+		logits = torch.mm(feature_dist, normalized_prototypes.t())
+		logits = F.log_softmax(logits, dim=-1)
+		
+		feature_euc = feature_dist
 		feature_euc = self.mlp_decoder(feature_euc)
 		codes = torch.cat((feature_euc, codes[:, 6:]), dim=1)
 

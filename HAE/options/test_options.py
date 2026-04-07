@@ -29,7 +29,7 @@ class TestOptions:
 		self.parser.add_argument('--resize_factors', type=str, default=None,
 		                         help='Downsampling factor for super-res (should be a single value for inference).')
 		
-		self.parser.add_argument('--hyperbolic_curvature', default=-1.0, type=float, help='Negative curvature k for the Poincaré ball')
+		self.parser.add_argument('--spherical_curvature', default=1.0, type=float, help='Positive curvature k for spherical manifold')
 
 
 	def parse(self):

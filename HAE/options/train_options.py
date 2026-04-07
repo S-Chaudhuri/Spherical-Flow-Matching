@@ -55,8 +55,10 @@ class TrainOptions:
 		# arguments for super-resolution
 		self.parser.add_argument('--resize_factors', type=str, default=None, help='For super-res, comma-separated resize factors to use for inference.')
 
-		# argument for hyperbolic curvature
-		self.parser.add_argument('--hyperbolic_curvature', default=-1.0, type=float, help='Negative curvature k for the Poincaré ball')
+		# argument for spherical curvature
+		# Curvature k > 0: sphere with radius r = 1/sqrt(k)
+		# k = 1.0 is unit sphere, higher k = smaller radius
+		self.parser.add_argument('--spherical_curvature', default=1.0, type=float, help='Positive curvature k for spherical manifold')
 
 	def parse(self):
 		opts = self.parser.parse_args()

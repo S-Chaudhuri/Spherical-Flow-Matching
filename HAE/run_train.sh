@@ -90,7 +90,7 @@ cd /gpfs/home6/fvaleau/HAE
 #     --image_interval=1000 \
 #     --hyperbolic_lambda=0.3 \
 #     --reverse_lambda=1 \
-#     --hyperbolic_curvature=-10 \
+#     --spherical_curvature=1.0 \
 #     --use_wandb
 
 python scripts/train.py \
@@ -111,7 +111,7 @@ python scripts/train.py \
     --image_interval=1000 \
     --hyperbolic_lambda=0.3 \
     --reverse_lambda=1 \
-    --hyperbolic_curvature=-10 \
+    --spherical_curvature=1.0 \
     --use_wandb
 
 
