@@ -604,12 +604,13 @@ class ManifoldFMLitModule(pl.LightningModule):
         else:
             t = torch.rand(N).reshape(-1, 1).to(x1)
 
-            def cond_u(x0, x1, t):
-                path = geodesic(self.manifold, x0, x1)
-                x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
-                return x_t, u_t
-            print(x0.shape, x1.shape, t.shape)
-            x_t, u_t = vmap(cond_u)(x0, x1, t)
+            # batched geodesic evaluation + derivative w.r.t. time.
+            shooting_tangent_vec = self.manifold.logmap(x0, x1)
+
+            def path(t):
+                return self.manifold.expmap(x0, t * shooting_tangent_vec)
+
+            x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
             x_t = x_t.reshape(N, self.dim)
             u_t = u_t.reshape(N, self.dim)
 
