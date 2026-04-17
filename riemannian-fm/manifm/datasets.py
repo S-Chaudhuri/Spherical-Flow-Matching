@@ -7,12 +7,15 @@ import numpy as np
 import pandas as pd
 import igl
 import torch
+import geoopt
 from torch.utils.data import Dataset, DataLoader
 
-from manifm.manifolds import Sphere, FlatTorus, Mesh, SPD, PoincareBall, Euclidean
+from manifm.manifolds import Sphere, FlatTorus, Mesh, SPD, PoincareBall, Euclidean, SphereCurvature
 from manifm.manifolds.mesh import Metric
 from manifm.utils import cartesian_from_latlon
 from manifm.manifolds.poincare import PoincareBallManifold
+
+
 
 
 
@@ -575,6 +578,11 @@ class Wrapped(Dataset):
 
 
 class GeneralDataset(Dataset):
+    """
+    General dataset for sampling pairs of points (x0, x1) on a specified manifold,
+    where x0 and x1 are sampled from specified distributions (e.g., uniform, Gaussian).
+    The possible manifolds include "sphere", "poincare", and "euclidean". The possible distributions: "gaussian".
+    """
     def __init__(self, cfg):
         self.cfg = cfg
         self.dim = cfg.dim
@@ -582,7 +590,7 @@ class GeneralDataset(Dataset):
 
         # --- Manifold ---
         if cfg.manifold == "sphere":
-            self.manifold = Sphere(c=cfg.curvature)
+            self.manifold = SphereCurvature(c=cfg.curvature)
         elif cfg.manifold == "poincare":
             self.manifold = PoincareBall(c=cfg.curvature)
         elif cfg.manifold == "euclidean":
@@ -590,7 +598,7 @@ class GeneralDataset(Dataset):
         else:
             raise ValueError("Unknown manifold")
 
-    def sample(self, dist_name, std=None):
+    def sample(self, dist_name, std=None, mean=None):
         if std is None:
             std = 1.0
 
@@ -604,7 +612,11 @@ class GeneralDataset(Dataset):
 
         # --- RIEMANNIAN GAUSSIAN ---
         elif dist_name == "gaussian":
-            raise NotImplementedError("Riemannian Gaussian not implemented yet")
+            if self.cfg.manifold == "euclidean":
+                sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
+            else:
+                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
+            return sample
 
         else:
             raise ValueError(f"Unknown distribution: {dist_name}")
@@ -613,8 +625,8 @@ class GeneralDataset(Dataset):
         return self.n_samples
 
     def __getitem__(self, idx):
-        x0 = self.sample(self.cfg.dist_x0, std=self.cfg.std_x0)
-        x1 = self.sample(self.cfg.dist_x1, std=self.cfg.std_x1)
+        x0 = self.sample(self.cfg.dist_x0, std=self.cfg.std_x0, mean=self.cfg.mean_x0)
+        x1 = self.sample(self.cfg.dist_x1, std=self.cfg.std_x1, mean=self.cfg.mean_x1)
         return {"x0": x0, "x1": x1}
 
 
