@@ -26,7 +26,7 @@ class SphereCurvature(Manifold):
     reversible = False
 
     def __init__(
-        self, intersection: torch.Tensor = None, complement: torch.Tensor = None, c: float = 1.0, radius: Optional[float] = None
+        self, intersection: torch.Tensor = None, complement: torch.Tensor = None, c: float = 1.0
     ):
         super().__init__()
         if intersection is not None and complement is not None:
@@ -47,7 +47,7 @@ class SphereCurvature(Manifold):
                 "Manifold only consists of isolated points when "
                 "subspace is 1-dimensional."
             )
-        self.c = 1.0
+        self.c = c
         self.radius = 1.0 / np.sqrt(self.c)
 
     def _check_shape(
@@ -78,9 +78,14 @@ class SphereCurvature(Manifold):
         self, x: torch.Tensor, *, atol=1e-5, rtol=1e-5
     ) -> Tuple[bool, Optional[str]]:
         norm = x.norm(dim=-1)
-        ok = torch.allclose(norm, norm.new((1,)).fill_(1), atol=atol, rtol=rtol)
+        ok = torch.allclose(
+            norm,
+            torch.full_like(norm, self.radius),
+            atol=atol,
+            rtol=rtol,
+        )
         if not ok:
-            return False, "`norm(x) != 1` with atol={}, rtol={}".format(atol, rtol)
+            return False, "`norm(x) != {}` with atol={}, rtol={}".format(self.radius, atol, rtol)
         ok = torch.allclose(self._project_on_subspace(x), x, atol=atol, rtol=rtol)
         if not ok:
             return (
@@ -115,20 +120,24 @@ class SphereCurvature(Manifold):
     # Changed by adding projection on the subspace, and scaling by the radius
     def projx(self, x: torch.Tensor) -> torch.Tensor:
         x = self._project_on_subspace(x) 
-        return x / x.norm(dim=-1, keepdim=True) * self.radius
+        # clamp norm to avoid numerical issues
+        return x / x.norm(dim=-1, keepdim=True).clamp_min(EPS[x.dtype]) * self.radius
 
-    # In the end not changed, TODO: is this correct? Should we also scale by the radius?
+    # We scale by radius since tangent space is defined relative to point with norm R
     def proju(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        # u = (u - (x * u).sum(dim=-1, keepdim=True) * x) * self.radius ** 2
-        u = u - (x * u).sum(dim=-1, keepdim=True) * x
+        # proj_x(u) = u - <x, u> / R^2 * x
+        u = u - (x * u).sum(dim=-1, keepdim=True) / (self.radius ** 2) * x 
         return self._project_on_subspace(u)
 
-    # Changed by adding scaling by the radius, and using the curvature in the trigonometric functions, TODO: check if this is correct
+    # Changed by adding scaling by the radius, and using the curvature in the trigonometric functions
     def expmap(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         norm_u = u.norm(dim=-1, keepdim=True)
-        theta = norm_u * np.sqrt(self.c)
-        # exp = x * torch.cos(norm_u) + u * torch.sin(norm_u) / norm_u
-        exp = x * torch.cos(theta) + u * torch.sin(theta) * (self.radius / norm_u)
+        # on a sphere, the geodesic angle is arc length / radius
+        theta = norm_u / self.radius
+        # exp = x * torch.cos(norm_u) + u * torch.sin(norm_u) / norm_u (with clamping to avoid numerical issues)
+        exp = x * torch.cos(theta) + u * torch.sin(theta) * (
+            self.radius / norm_u.clamp_min(EPS[u.dtype])
+        )
         retr = self.projx(x + u)
         cond = norm_u > EPS[norm_u.dtype]
         return torch.where(cond, exp, retr)
@@ -157,8 +166,11 @@ class SphereCurvature(Manifold):
         return torch.acos(inner) * self.radius
 
     def cdist(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        inner = self.pairwise_inner(x, y).clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
-        return torch.acos(inner)
+        # first divide, then clamp to set to range [-R^2, R^2], 
+        inner = self.pairwise_inner(x, y) / (self.radius ** 2)
+        inner = inner.clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
+        # scale by radius since the distance is defined relative to points with norm R
+        return torch.acos(inner) * self.radius
 
     egrad2rgrad = proju
 
@@ -223,12 +235,10 @@ class SphereCurvature(Manifold):
 
     random = random_uniform
 
-    # TODO: check if this is correct. 
-    def wrapped_normal(self, dim, mean, std):
-        """
-        Sample from the wrapped normal distribution on the sphere.
-        """
-        z = torch.randn_like(mean)
-        z = self.proju(mean, z)
-        z = std * z
-        return self.expmap(mean, z)
+# mass can wrap around the sphere when std is large
+def wrapped_normal(self, mean, std):
+    z = torch.randn_like(mean)
+    z = self.proju(mean, z)
+    z = std * z
+    z = self.proju(mean, z)
+    return self.expmap(mean, z)
