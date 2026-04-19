@@ -10,3 +10,4 @@ from .sphere import Sphere
 from .hyperbolic import PoincareBall
 from .mesh import Mesh
 from .utils import geodesic
+from .sphere_curvature import SphereCurvature

@@ -7,12 +7,15 @@ import numpy as np
 import pandas as pd
 import igl
 import torch
+import geoopt
 from torch.utils.data import Dataset, DataLoader
 
-from manifm.manifolds import Sphere, FlatTorus, Mesh, SPD, PoincareBall, Euclidean
+from manifm.manifolds import Sphere, FlatTorus, Mesh, SPD, PoincareBall, Euclidean, SphereCurvature
 from manifm.manifolds.mesh import Metric
 from manifm.utils import cartesian_from_latlon
 from manifm.manifolds.poincare import PoincareBallManifold
+
+
 
 
 
@@ -232,7 +235,7 @@ class HyperbolicDatasetPair(Dataset):
         #mean1 = torch.tensor([-self.distance, self.distance]) * sign1
         mean1 = torch.tensor([-self.distance, -self.distance])
 
-        x0 = PoincareBall().wrapped_normal(2, mean=mean0, std=100.0)
+        x0 = PoincareBall().wrapped_normal(2, mean=mean0, std=self.std)
         x1 = PoincareBall().wrapped_normal(2, mean=mean1, std=self.std)
         
 
@@ -574,16 +577,57 @@ class Wrapped(Dataset):
         return sample
 
 
-class ExpandDataset(Dataset):
-    def __init__(self, dset, expand_factor=1):
-        self.dset = dset
-        self.expand_factor = expand_factor
+class GeneralDataset(Dataset):
+    """
+    General dataset for sampling pairs of points (x0, x1) on a specified manifold,
+    where x0 and x1 are sampled from specified distributions (e.g., uniform, Gaussian).
+    The possible manifolds include "sphere", "poincare", and "euclidean". The possible distributions: "gaussian".
+    """
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.dim = cfg.dim
+        self.n_samples = cfg.n_samples
+
+        # --- Manifold ---
+        if cfg.manifold == "sphere":
+            self.manifold = SphereCurvature(c=cfg.curvature)
+        elif cfg.manifold == "poincare":
+            self.manifold = PoincareBall(c=cfg.curvature)
+        elif cfg.manifold == "euclidean":
+            self.manifold = Euclidean()
+        else:
+            raise ValueError("Unknown manifold")
+
+    def sample(self, dist_name, std=None, mean=None):
+        if std is None:
+            std = 1.0
+
+        # --- UNIFORM ---
+        if dist_name == "uniform":
+            raise NotImplementedError("Uniform sampling not implemented yet")
+
+        # --- EUCLIDEAN NORMAL ---
+        elif dist_name == "normal":
+            raise NotImplementedError("Euclidean normal not implemented yet")
+
+        # --- RIEMANNIAN GAUSSIAN ---
+        elif dist_name == "gaussian":
+            if self.cfg.manifold == "euclidean":
+                sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
+            else:
+                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
+            return sample
+
+        else:
+            raise ValueError(f"Unknown distribution: {dist_name}")
 
     def __len__(self):
-        return len(self.dset) * self.expand_factor
+        return self.n_samples
 
     def __getitem__(self, idx):
-        return self.dset[idx % len(self.dset)]
+        x0 = self.sample(self.cfg.dist_x0, std=self.cfg.std_x0, mean=self.cfg.mean_x0)
+        x1 = self.sample(self.cfg.dist_x1, std=self.cfg.std_x1, mean=self.cfg.mean_x1)
+        return {"x0": x0, "x1": x1}
 
 
 def _get_dataset(cfg):
@@ -672,6 +716,9 @@ def _get_dataset(cfg):
         dataset = HyperbolicUniformToGaussian()
     elif cfg.data == "euclidean":
         dataset = EuclideanImages(cfg.get("euclidean_datadir"))
+    elif cfg.data == "general_fm":
+        dataset = GeneralDataset(cfg)
+
     else:
         raise ValueError("Unknown dataset option '{name}'")
     return dataset, expand_factor
