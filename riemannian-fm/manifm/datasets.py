@@ -597,11 +597,47 @@ class GeneralDataset(Dataset):
             self.manifold = Euclidean()
         else:
             raise ValueError("Unknown manifold")
+    
+
+    def check_mean(self, mean, manifold, tol=1e-5):
+        """
+        Validates that mean(s) lie on the correct manifold.
+
+        Supports:
+        - single mean: shape (d,)
+        - MoG means: shape (K, d) or list of vectors
+        """
+
+        if mean.ndim == 1:
+            mean = mean.unsqueeze(0)
+
+        norms = torch.norm(mean, dim=-1)
+
+        if manifold == "poincare":
+            if not torch.all(norms < 1.0):
+                raise ValueError(
+                    f"Poincaré mean(s) must have norm < 1. Got norms: {norms}"
+                )
+
+        elif manifold == "sphere":
+            if not torch.all(torch.abs(norms - 1.0) < tol):
+                raise ValueError(
+                    f"Sphere mean(s) must have norm ≈ 1. Got norms: {norms}"
+                )
+
+        elif manifold == "euclidean":
+            pass
+
+        else:
+            raise ValueError(f"Unknown manifold: {manifold}")
+            
 
     def sample(self, dist_name, std=None, mean=None):
         if std is None:
             std = 1.0
 
+        print("mean: ", mean)
+        self.check_mean(mean, self.cfg.manifold)
         # --- UNIFORM ---
         if dist_name == "uniform":
             raise NotImplementedError("Uniform sampling not implemented yet")
