@@ -615,8 +615,37 @@ class GeneralDataset(Dataset):
             if self.cfg.manifold == "euclidean":
                 sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
             else:
-                sample = self.manifold.wrapped_normal(mean=mean, std=std)
+                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
             return sample
+        
+        # --- MIXTURE OF GAUSSIANS ---
+        # Define stds and means as list of lists. For example:
+        # std = [[0.1, 0.1], [0.2, 0.2]]
+        # mean = [[0.1, 0.1], [0.9, 0.9]]
+
+        elif dist_name == "MoG":
+            K = len(std)
+
+            if self.cfg.weights is None:
+                weights = torch.ones(K) / K
+            else:
+                weights = torch.tensor(self.cfg.weights)
+                weights = weights / weights.sum()
+
+            # Sample one component
+            k = torch.multinomial(weights, 1).item()
+
+            m = mean[k]
+            s = std[k]
+
+            if self.cfg.manifold == "euclidean":
+                sample = self.manifold.random_normal(self.dim, mean=m, std=s)
+            else:
+                sample = self.manifold.wrapped_normal(self.dim, mean=m, std=s)
+
+            return sample
+
+
 
         else:
             raise ValueError(f"Unknown distribution: {dist_name}")
