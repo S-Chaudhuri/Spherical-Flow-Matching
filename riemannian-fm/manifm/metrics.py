@@ -161,7 +161,7 @@ class ManifoldMetricHandler:
             ["mse", "wasserstein", "diversity", "rfm"]
         )
 
-        # --- Manifold selection ---
+    
         self.m_type = cfg.get("manifold", "euclidean").lower()
         curvature = cfg.get("curvature", 1.0)
 
@@ -177,14 +177,14 @@ class ManifoldMetricHandler:
    
     def calculate_wasserstein(self, x_gen, x_real, p=1, blur=0.05):
 
-        # --- Euclidean special case (fast + correct) ---
+
         if self.m_type == "euclidean":
             cost = torch.cdist(x_gen, x_real, p=2) ** p
 
             solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur)
             return solver(x_gen, x_real) ** (1 / p)
 
-        # --- General manifold case ---
+    
         def geodesic_cost(x, y):
             # Explicit pairwise expansion
             x_exp = x.unsqueeze(1)   # (N, 1, D)
@@ -233,11 +233,11 @@ class ManifoldMetricHandler:
         """
         Computes intrinsic mean using Riemannian gradient descent.
         """
-        # 1. Faster Euclidean Fallback
+
         if self.manifold.__class__.__name__ == "Euclidean":
             return x.mean(dim=0, keepdim=True)
 
-        # 2. Robust Manifold Iteration
+    
         mu = x[0:1].clone() 
 
         for _ in range(max_iter):
@@ -254,8 +254,7 @@ class ManifoldMetricHandler:
         """
         mu = self.frechet_mean(samples)
         
-        # --- THE ONLY CRITICAL FIX ---
-        # Explicitly broadcast mu to match samples shape for the manifold dist call
+        # don't edit, critical fix for pointwise distance calculation
         mu_expanded = mu.expand_as(samples)
         variance = self.manifold.dist(samples, mu_expanded).pow(2).mean()
         return variance
