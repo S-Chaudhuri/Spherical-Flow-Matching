@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import os
 from manifm.metrics import ManifoldMetricHandler
 from manifm.manifolds import PoincareBall, SphereCurvature, Euclidean
-
+from manifm.datasets import HyperbolicDatasetPair
+from torch.utils.data import DataLoader
 
 def get_test_config(manifold_type):
     return {
@@ -81,11 +82,25 @@ def run_test(manifold_type):
 
     # Use keys matching your Handler's internal logic
     logs = {"wasserstein": [], "diversity": [], "alignment": [], "rfm_loss": []}
+    
 
     for step in range(5):
-        if manifold_type == "euclidean": x_gen, x_real = sample_euclidean()
-        elif manifold_type == "sphere": x_gen, x_real = sample_sphere()
-        elif manifold_type == "poincare": x_gen, x_real = sample_poincare()
+        if manifold_type == "euclidean": 
+            x_gen, x_real = sample_euclidean()
+        elif manifold_type == "sphere": 
+            x_gen, x_real = sample_sphere()
+        elif manifold_type == "poincare": 
+            hyperbolic_ds = HyperbolicDatasetPair()
+            loader = DataLoader(hyperbolic_ds, batch_size=128)
+            
+            batch = next(iter(loader))
+            
+            x_gen, x_real = batch["x1"], batch["x0"] 
+
+    # for step in range(5):
+    #     if manifold_type == "euclidean": x_gen, x_real = sample_euclidean()
+    #     elif manifold_type == "sphere": x_gen, x_real = sample_sphere()
+    #     elif manifold_type == "poincare": x_gen, x_real = HyperbolicDatasetPair()#sample_poincare()
 
         # 1. Test Sample Mode (Accuracy/Diversity)
         sample_results = metrics.calculate_all(x_gen, x_real, mode="sample", step=step)
@@ -121,6 +136,6 @@ if __name__ == "__main__":
         try:
             run_test(manifold)
         except Exception as e:
-            print(f"❌ Error testing {manifold}: {e}")
+            print(f" Error testing {manifold}: {e}")
 
-    print("\n✅ Testing complete. Check results/plots/ for PNG files.")
+    print("\n Testing complete. Check results/plots/ for PNG files.")
