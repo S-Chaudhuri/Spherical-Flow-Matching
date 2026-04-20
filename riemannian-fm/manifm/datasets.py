@@ -615,7 +615,7 @@ class GeneralDataset(Dataset):
             if self.cfg.manifold == "euclidean":
                 sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
             else:
-                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
+                sample = self.manifold.wrapped_normal(mean=mean, std=std)
             return sample
 
         else:
