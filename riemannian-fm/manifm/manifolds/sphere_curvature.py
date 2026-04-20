@@ -235,10 +235,10 @@ class SphereCurvature(Manifold):
 
     random = random_uniform
 
-# mass can wrap around the sphere when std is large
-def wrapped_normal(self, mean, std):
-    z = torch.randn_like(mean)
-    z = self.proju(mean, z)
-    z = std * z
-    z = self.proju(mean, z)
-    return self.expmap(mean, z)
+    # mass can wrap around the sphere when std is large
+    def wrapped_normal(self, dim, mean, std):
+        z = torch.randn_like(mean)
+        z = self.proju(mean, z)
+        z = std * z
+        z = self.proju(mean, z)
+        return self.expmap(mean, z)

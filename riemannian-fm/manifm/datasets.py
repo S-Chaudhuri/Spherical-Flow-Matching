@@ -597,11 +597,47 @@ class GeneralDataset(Dataset):
             self.manifold = Euclidean()
         else:
             raise ValueError("Unknown manifold")
+    
+
+    def check_mean(self, mean, manifold, tol=1e-5):
+        """
+        Validates that mean(s) lie on the correct manifold.
+
+        Supports:
+        - single mean: shape (d,)
+        - MoG means: shape (K, d) or list of vectors
+        """
+
+        if mean.ndim == 1:
+            mean = mean.unsqueeze(0)
+
+        norms = torch.norm(mean, dim=-1)
+
+        if manifold == "poincare":
+            if not torch.all(norms < 1.0):
+                raise ValueError(
+                    f"Poincaré mean(s) must have norm < 1. Got norms: {norms}"
+                )
+
+        elif manifold == "sphere":
+            if not torch.all(torch.abs(norms - 1.0) < tol):
+                raise ValueError(
+                    f"Sphere mean(s) must have norm ≈ 1. Got norms: {norms}"
+                )
+
+        elif manifold == "euclidean":
+            pass
+
+        else:
+            raise ValueError(f"Unknown manifold: {manifold}")
+            
 
     def sample(self, dist_name, std=None, mean=None):
         if std is None:
             std = 1.0
 
+        print("mean: ", mean)
+        self.check_mean(mean, self.cfg.manifold)
         # --- UNIFORM ---
         if dist_name == "uniform":
             raise NotImplementedError("Uniform sampling not implemented yet")
@@ -617,6 +653,35 @@ class GeneralDataset(Dataset):
             else:
                 sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
             return sample
+        
+        # --- MIXTURE OF GAUSSIANS ---
+        # Define stds and means as list of lists. For example:
+        # std = [[0.1, 0.1], [0.2, 0.2]]
+        # mean = [[0.1, 0.1], [0.9, 0.9]]
+
+        elif dist_name == "MoG":
+            K = len(std)
+
+            if self.cfg.weights is None:
+                weights = torch.ones(K) / K
+            else:
+                weights = torch.tensor(self.cfg.weights)
+                weights = weights / weights.sum()
+
+            # Sample one component
+            k = torch.multinomial(weights, 1).item()
+
+            m = mean[k]
+            s = std[k]
+
+            if self.cfg.manifold == "euclidean":
+                sample = self.manifold.random_normal(self.dim, mean=m, std=s)
+            else:
+                sample = self.manifold.wrapped_normal(self.dim, mean=m, std=s)
+
+            return sample
+
+
 
         else:
             raise ValueError(f"Unknown distribution: {dist_name}")
