@@ -19,8 +19,8 @@ class ManifoldMetricHandler:
             [
                 "sinkhorn_knopp",
                 "mmd",
-                "coverage",
-                "precision",
+                "epsilon_coverage",
+                "epsilon_precision",
                 "frechet_variance",
                 "dispersion",
                 "radial",
@@ -186,15 +186,15 @@ class ManifoldMetricHandler:
         return (nearest <= eps).float().mean()
     
 
-    def calculate_precision(
-            self,
-            x_gen,
-            x_real,
-            eps = None,
-            eps_multiplier = None,
+    def calculate_epsilon_precision(
+        self,
+        x_gen,
+        x_real,
+        eps = None,
+        eps_multiplier = None,
         ):
         """
-        Measures how many generated samples lie near the target support
+        Measures how many generated samples lie within epsilon of the target support
         """
         d = self.pairwise_dist(x_gen, x_real)
 
@@ -266,7 +266,6 @@ class ManifoldMetricHandler:
         """
         Pairwise dispersion calculation: simpler version of Frechet variance
         """
-        #! TODO: see if this uses correct distance calculation
         d = self.pairwise_dist(samples, samples)
         n = samples.shape[0]
         mask = ~torch.eye(n, dtype = torch.bool, device = samples.device)
@@ -284,25 +283,50 @@ class ManifoldMetricHandler:
 
     def calculate_vector_norm_stats(self, v, x):
         """
-        Stability: Vector field norms through mean and max
+        Stability: vector field norm statistics
         """
         norms = self._norm(v, x)
-        return {"mean" : norms.mean(), "max" : norms.max()}
-    #! Do we need divergence or some metrics? 
+
+        return {
+            "mean": norms.mean(),
+            "std": norms.std(unbiased = False),
+            "max": norms.max(),
+            "p95": torch.quantile(norms, 0.95),
+        }
+    #! Do we need divergence or some more in-depth metrics? 
 
 
     def calculate_tangency_violation(self, x, v):
         """
-        Measures how far vectors are from the tangent space
+        Validity: absolute and relative tangent-space violation
         """
         if hasattr(self.manifold, "proju"):
             v_proj = self.manifold.proju(x, v)
-            return self._norm(v - v_proj, x).mean()
+            violation = self._norm(v - v_proj, x)
+            norm = self._norm(v, x)
+            relative = violation / torch.clamp(norm, min = 1e-8)
+
+            return {
+                "absolute": violation.mean(),
+                "relative": relative.mean(),
+            }
 
         if self.m_type == "sphere":
-            return torch.abs((x * v).sum(dim = -1)).mean()
+            violation = torch.abs((x * v).sum(dim = -1))
+            norm = torch.linalg.norm(v, dim = -1)
+            relative = violation / torch.clamp(norm, min = 1e-8)
 
-        return torch.tensor(0.0, device = x.device, dtype = x.dtype)
+            return {
+                "absolute": violation.mean(),
+                "relative": relative.mean(),
+            }
+
+        zero = torch.tensor(0.0, device = x.device, dtype = x.dtype)
+
+        return {
+            "absolute": zero,
+            "relative": zero,
+        }
 
 
     def finite_fraction(self, x):
@@ -345,10 +369,6 @@ class ManifoldMetricHandler:
 
         return loss, alignment
 
-
-#! TODO: What to do with pairwise distances; does this even matter?
-#! It depends on the type of flow matching probably... conditional or nah
-
     
     def calculate_all(
             self,
@@ -365,15 +385,17 @@ class ManifoldMetricHandler:
 
             error, align = self.calculate_rfm_loss(pred, target, x_t)
             norm_stats = self.calculate_vector_norm_stats(pred, x_t)
+            tangent_stats = self.calculate_tangency_violation(x_t, pred)
 
             results["val_vec/rfm_loss"] = error
             results["val_vec/alignment"] = align
-            #! Do we need MSE? --> why?
-            results["val_vec/ambient_mse"] = torch.mean((pred - target) ** 2)
             results["val_vec/finite_fraction"] = self.finite_fraction(pred)
             results["val_vec/norm_mean"] = norm_stats["mean"]
             results["val_vec/norm_max"] = norm_stats["max"]
-            results["val_vec/tangency_violation"] = self.calculate_tangency_violation(x_t, pred)
+            results["val_vec/norm_std"] = norm_stats["std"]
+            results["val_vec/norm_p95"] = norm_stats["p95"]
+            results["val_vec/tangency_violation_abs"] = tangent_stats["absolute"]
+            results["val_vec/tangency_violation_rel"] = tangent_stats["relative"]
             
         elif mode == "sample":
 
@@ -383,11 +405,11 @@ class ManifoldMetricHandler:
             if "mmd" in self.active_metrics:
                 results["val_sample/mmd"] = self.calculate_mmd(pred, target)
 
-            if "coverage" in self.active_metrics:
+            if "epsilon_coverage" in self.active_metrics:
                 results["val_sample/epsilon_coverage"] = self.calculate_epsilon_coverage(pred, target)
 
-            if "precision" in self.active_metrics:
-                results["val_sample/precision"] = self.calculate_precision(pred, target)
+            if "epsilon_precision" in self.active_metrics:
+                results["val_sample/epsilon_precision"] = self.calculate_epsilon_precision(pred, target)
 
             if "frechet_variance" in self.active_metrics:
                 frechet_pred = self.calculate_frechet_variance(pred)
