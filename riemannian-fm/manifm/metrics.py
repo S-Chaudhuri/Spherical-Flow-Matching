@@ -176,7 +176,10 @@ class ManifoldMetricHandler:
 
    
     def calculate_wasserstein(self, x_gen, x_real, p=1, blur=0.05):
-
+        """
+        Calculates W_p(mu, nu) = inf E[d(x,y)^p]^(1/p).
+        Measures total distributional accuracy.
+        """
 
         if self.m_type == "euclidean":
             cost = torch.cdist(x_gen, x_real, p=2) ** p
@@ -209,7 +212,7 @@ class ManifoldMetricHandler:
    
     def calculate_rfm_error(self, v_pred, v_target, x_t):
         """
-        v_pred, v_target ∈ T_{x_t}M
+        v_pred, v_target ∈ T_{x_t}M #tangent vectors at x_t
         """
         diff = v_pred - v_target
 
