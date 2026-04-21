@@ -92,7 +92,7 @@ def main(cfg: DictConfig):
                 save_dir=".",
                 name=f"{cfg.data}_{now}",
                 project="ManiFM",
-                log_model=False,
+                log_model=True,
                 config=cfg_dict,
                 resume=True,
             )

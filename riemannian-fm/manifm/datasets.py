@@ -585,18 +585,45 @@ class GeneralDataset(Dataset):
     """
     def __init__(self, cfg):
         self.cfg = cfg
-        self.dim = cfg.dim
-        self.n_samples = cfg.n_samples
+        gcfg = cfg.get("general", None)
+        self.gcfg = gcfg
+
+        self.dim = int(gcfg.dim)
+        self.n_samples = int(gcfg.n_samples)
+
+        self.x0_dist = gcfg.get("x0_dist", None)
+        self.x1_dist = gcfg.get("x1_dist", None)
+        self.std_x0 = gcfg.get("std_x0", None)
+        self.std_x1 = gcfg.get("std_x1", None)
+        self.mean_x0 = gcfg.get("mean_x0", None)
+        self.mean_x1 = gcfg.get("mean_x1", None)
+
+        # saving configuration for evalutaion
+        self.eval_n_pairs = int(cfg.get("eval_n_pairs", 100))
+        self.eval_t_values = cfg.get("eval_t_values", None)
+        self.save_artifacts = bool(cfg.get("save_artifacts", True))
 
         # --- Manifold ---
-        if cfg.manifold == "sphere":
-            self.manifold = SphereCurvature(c=cfg.curvature)
-        elif cfg.manifold == "poincare":
-            self.manifold = PoincareBall(c=cfg.curvature)
-        elif cfg.manifold == "euclidean":
+        self.manifold_name = gcfg.manifold
+        curvature = float(gcfg.get("curvature", 1.0))
+
+        if self.manifold_name == "sphere":
+            self.manifold = SphereCurvature(c=curvature)
+        elif self.manifold_name == "poincare":
+            self.manifold = PoincareBall(c=curvature)
+        elif self.manifold_name == "euclidean":
             self.manifold = Euclidean()
         else:
             raise ValueError("Unknown manifold")
+
+        if self.save_artifacts:
+            self._load_or_create_fixed_dataset()
+        else:
+            self.x0_all = None
+            self.x1_all = None
+            self.eval_x0 = None
+            self.eval_x1 = None
+            self.eval_t = None
     
 
     def check_mean(self, mean, manifold, tol=1e-5):
@@ -607,6 +634,12 @@ class GeneralDataset(Dataset):
         - single mean: shape (d,)
         - MoG means: shape (K, d) or list of vectors
         """
+
+        if mean is None:
+            return
+
+        if not torch.is_tensor(mean):
+            mean = torch.tensor(mean, dtype=torch.float32)
 
         if mean.ndim == 1:
             mean = mean.unsqueeze(0)
@@ -636,8 +669,10 @@ class GeneralDataset(Dataset):
         if std is None:
             std = 1.0
 
-        print("mean: ", mean)
-        self.check_mean(mean, self.cfg.manifold)
+        if mean is not None and not torch.is_tensor(mean):
+            mean = torch.tensor(mean, dtype=torch.float32)
+
+        self.check_mean(mean, self.manifold_name)
         # --- UNIFORM ---
         if dist_name == "uniform":
             raise NotImplementedError("Uniform sampling not implemented yet")
@@ -648,7 +683,7 @@ class GeneralDataset(Dataset):
 
         # --- RIEMANNIAN GAUSSIAN ---
         elif dist_name == "gaussian":
-            if self.cfg.manifold == "euclidean":
+            if self.manifold_name == "euclidean":
                 sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
             else:
                 sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
@@ -662,10 +697,11 @@ class GeneralDataset(Dataset):
         elif dist_name == "MoG":
             K = len(std)
 
-            if self.cfg.weights is None:
+            weights_cfg = self.gcfg.get("weights", None)
+            if weights_cfg is None:
                 weights = torch.ones(K) / K
             else:
-                weights = torch.tensor(self.cfg.weights)
+                weights = torch.tensor(weights_cfg)
                 weights = weights / weights.sum()
 
             # Sample one component
@@ -674,7 +710,7 @@ class GeneralDataset(Dataset):
             m = mean[k]
             s = std[k]
 
-            if self.cfg.manifold == "euclidean":
+            if self.manifold_name == "euclidean":
                 sample = self.manifold.random_normal(self.dim, mean=m, std=s)
             else:
                 sample = self.manifold.wrapped_normal(self.dim, mean=m, std=s)
@@ -687,12 +723,171 @@ class GeneralDataset(Dataset):
             raise ValueError(f"Unknown distribution: {dist_name}")
 
     def __len__(self):
-        return self.n_samples
+        if self.x0_all is not None:
+            return int(self.x0_all.shape[0])
+        return int(self.n_samples)
 
     def __getitem__(self, idx):
-        x0 = self.sample(self.cfg.dist_x0, std=self.cfg.std_x0, mean=self.cfg.mean_x0)
-        x1 = self.sample(self.cfg.dist_x1, std=self.cfg.std_x1, mean=self.cfg.mean_x1)
+        if self.x0_all is None or self.x1_all is None:
+            x0 = self.sample(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
+            x1 = self.sample(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
+            return {"x0": x0, "x1": x1}
+
+        x0 = self.x0_all[idx]
+        x1 = self.x1_all[idx]
         return {"x0": x0, "x1": x1}
+
+    def _load_or_create_fixed_dataset(self):
+
+        artifacts_dir = os.path.join(os.getcwd(), "artifacts")
+        os.makedirs(artifacts_dir, exist_ok=True)
+
+        out_path = os.path.join(artifacts_dir, "general_dataset_fixed_eval.pt")
+
+        def _to_python(obj):
+            if obj is None:
+                return None
+            if torch.is_tensor(obj):
+                return obj.detach().cpu().tolist()
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, (list, tuple)):
+                return [_to_python(x) for x in obj]
+            if isinstance(obj, (float, int, str, bool)):
+                return obj
+            # fallback for OmegaConf / other scalar-like objects
+            try:
+                return float(obj)
+            except Exception:
+                return str(obj)
+
+        # build the exact metadata we expect for the current run.
+        # this is used to decide whether an existing saved dataset is compatible.
+        expected_meta = {
+            "data": str(self.cfg.get("data", None)),
+            "manifold": str(self.manifold_name),
+            "curvature": float(self.gcfg.get("curvature", 1.0)),
+            "dim": int(self.dim),
+            "n_samples": int(self.n_samples),
+            "eval_n_pairs_requested": int(self.eval_n_pairs),
+            "x0_dist": str(self.x0_dist),
+            "x1_dist": str(self.x1_dist),
+            "std_x0": _to_python(self.std_x0),
+            "std_x1": _to_python(self.std_x1),
+            "mean_x0": _to_python(self.mean_x0),
+            "mean_x1": _to_python(self.mean_x1),
+            "eval_t_values": (
+                None if self.eval_t_values is None else _to_python(self.eval_t_values)
+            ),
+            # use a dedicated dataset seed if provided; otherwise fall back to the main seed.
+            "fixed_dataset_seed": int(self.cfg.get("eval_seed", self.cfg.get("seed", 0))),
+        }
+
+        # try to load an existing artifact, but only if metadata matches.
+        if os.path.exists(out_path):
+            payload = torch.load(out_path, map_location="cpu")
+            saved_meta = payload.get("meta", {})
+
+            # compare only the keys that define the sampled dataset.
+            # if anything important changed, we regenerate.
+            matches = all(saved_meta.get(k) == v for k, v in expected_meta.items())
+
+            if matches:
+                self.x0_all = payload.get("x0_all")
+                self.x1_all = payload.get("x1_all")
+                self.eval_x0 = payload.get("eval_x0")
+                self.eval_x1 = payload.get("eval_x1")
+                self.eval_t = payload.get("eval_t")
+
+                # basic sanity checks in case the file exists but is incomplete/corrupt.
+                if (
+                    self.x0_all is not None
+                    and self.x1_all is not None
+                    and self.eval_x0 is not None
+                    and self.eval_x1 is not None
+                    and self.eval_t is not None
+                ):
+                    return
+
+            # if we get here, the file exists but does not match the current config
+            # (or is incomplete), so we regenerate below.
+
+        # save RNG state so creating the fixed dataset does not disturb training RNG.
+        torch_state = torch.random.get_rng_state()
+        np_state = np.random.get_state()
+        py_state = random.getstate()
+
+        fixed_seed = int(self.cfg.get("eval_seed", self.cfg.get("seed", 0)))
+        torch.manual_seed(fixed_seed)
+        np.random.seed(fixed_seed)
+        random.seed(fixed_seed)
+
+        try:
+            # build the fixed evaluation time grid.
+            # these are the probe times used later for x_t / u_t / v_theta evaluation.
+            if self.eval_t_values is None:
+                eval_t = torch.linspace(0.0, 1.0, 5, dtype=torch.float32)
+            else:
+                eval_t = torch.tensor(self.eval_t_values, dtype=torch.float32)
+
+            # generate the full paired dataset once.
+            # after this, __getitem__ will return these saved pairs instead of resampling.
+            x0_all = []
+            x1_all = []
+            for _ in range(self.n_samples):
+                x0 = self.sample(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
+                x1 = self.sample(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
+
+                x0_all.append(x0.detach().cpu())
+                x1_all.append(x1.detach().cpu())
+
+            x0_all = torch.stack(x0_all, dim=0).contiguous()
+            x1_all = torch.stack(x1_all, dim=0).contiguous()
+
+            # fixed evaluation subset:
+            # use the first n_eval paired samples from the saved dataset.
+            n_eval = min(int(self.eval_n_pairs), int(x0_all.shape[0]))
+            eval_x0 = x0_all[:n_eval].contiguous()
+            eval_x1 = x1_all[:n_eval].contiguous()
+
+            # save full yaml config
+            cfg_yaml = None
+            try:
+                from omegaconf import OmegaConf  # type: ignore
+                cfg_yaml = OmegaConf.to_yaml(self.cfg)
+            except Exception:
+                cfg_yaml = None
+
+            payload = {
+                "meta": {
+                    **expected_meta,
+                    "eval_n_pairs_actual": int(n_eval),
+                    "cfg_yaml": cfg_yaml,
+                },
+                # full fixed sampled dataset used by __getitem__
+                "x0_all": x0_all,
+                "x1_all": x1_all,
+                # fixed evaluation subset used later for x_t / u_t / v_theta comparisons
+                "eval_x0": eval_x0,
+                "eval_x1": eval_x1,
+                # fixed set of probe times for field evaluation
+                "eval_t": eval_t,
+            }
+
+            torch.save(payload, out_path)
+
+            # attach to the dataset object
+            self.x0_all = x0_all
+            self.x1_all = x1_all
+            self.eval_x0 = eval_x0
+            self.eval_x1 = eval_x1
+            self.eval_t = eval_t
+
+        finally:
+            # restore RNG state so this helper does not affect the rest of the run.
+            torch.random.set_rng_state(torch_state)
+            np.random.set_state(np_state)
+            random.setstate(py_state)
 
 
 def _get_dataset(cfg):

@@ -35,3 +35,5 @@ eval_projx: False
 local_coords: False
 normalize_loglik: False
 visualize: True
+eval_n_pairs: 100
+eval_t_values: [0.0, 0.25, 05, 0.75, 1.0]
