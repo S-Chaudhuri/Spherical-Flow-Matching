@@ -628,6 +628,7 @@ class ManifoldMetricHandler:
 #             "step": step,
 #             "manifold": manifold_name
 #         }
+<<<<<<< HEAD
 #         torch.save(data, filename)
 
 import torch
@@ -831,3 +832,6 @@ class ManifoldMetricHandler:
         }
 
         torch.save(data, f"{path}/{manifold_name}_step_{step:06d}.pt")
+=======
+#         torch.save(data, filename)
+>>>>>>> a5e4e1c41b226ae578d6d8e70b666bccfa529896
