@@ -9,7 +9,7 @@ import geopandas
 from shapely.geometry import Point
 
 from tqdm import tqdm
-
+import geoopt
 import torch
 import torch.nn.functional as F
 from torchmetrics import MeanMetric, MinMetric
@@ -34,7 +34,6 @@ from manifm.manifolds.spd import plot_cone
 from manifm.manifolds import geodesic
 from manifm.mesh_utils import trimesh_to_vtk, points_to_vtk
 from manifm.solvers import projx_integrator_return_last, projx_integrator
-
 
 def div_fn(u):
     """Accepts a function u:R^D -> R^D."""
@@ -154,6 +153,180 @@ class ManifoldFMLitModule(pl.LightningModule):
         plt.tight_layout()
         plt.savefig(f"figs/trajs-{self.global_step:06d}.png")
         plt.savefig(f"figs/trajs-{self.global_step:06d}.pdf")
+        plt.close()
+
+    @torch.no_grad()
+    def plot_sphere_3d(self, batch):
+        os.makedirs("figs", exist_ok=True)
+
+        x0 = batch["x0"]
+        x1 = batch["x1"]
+
+        trajs = self.sample_all(x1.shape[0], device=x1.device, x0=x0)
+        samples = trajs[-1]
+
+        x0 = x0.detach().cpu().numpy()
+        x1 = x1.detach().cpu().numpy()
+        samples = samples.detach().cpu().numpy()
+        trajs = trajs.detach().cpu().numpy()
+
+        c = getattr(self.manifold, "c", 1.0)
+        if torch.is_tensor(c):
+            c = c.item()
+        R = 1.0 / np.sqrt(c) if c > 0 else 1.0
+
+        u = np.linspace(0, 2 * np.pi, 30)
+        v = np.linspace(0, np.pi, 30)
+        u, v = np.meshgrid(u, v)
+        
+        xs = R * np.cos(u) * np.sin(v)
+        ys = R * np.sin(u) * np.sin(v)
+        zs = R * np.cos(v)
+
+        fig = plt.figure(figsize=(10, 10))
+        ax = fig.add_subplot(111, projection='3d')
+
+        ax.plot_wireframe(xs, ys, zs, color="lightblue", alpha=0.1, linewidth=0.5)
+        
+        ax.scatter(x0[:, 0], x0[:, 1], x0[:, 2], s=12, color="red", label="Start (x0)")
+        ax.scatter(samples[:, 0], samples[:, 1], samples[:, 2], s=12, color="blue", label="End (x1)")
+        
+        for i in range(min(50, trajs.shape[1])):
+            ax.plot(trajs[:, i, 0], trajs[:, i, 1], trajs[:, i, 2], color="grey", alpha=0.5, linewidth=1)
+
+        ax.set_xlim([-R, R])
+        ax.set_ylim([-R, R])
+        ax.set_zlim([-R, R])
+        ax.set_box_aspect([1, 1, 1])
+        ax.axis('off')
+        
+        plt.savefig(f"figs/sphere-{self.global_step:06d}.png")
+        plt.close()
+
+    def add_geodesic_grid(self,ax: plt.Axes, manifold: geoopt.Stereographic, line_width=0.1):
+
+        # define geodesic grid parameters
+        N_EVALS_PER_GEODESIC = 10000
+        STYLE = "--"
+        COLOR = "gray"
+        LINE_WIDTH = line_width
+
+        # get manifold properties
+        print("curvature:", manifold)
+        K = manifold.c
+        R = manifold.radius
+
+        # get maximal numerical distance to origin on manifold
+        if K < 0:
+            # create point on R
+            r = torch.tensor((R, 0.0), dtype=manifold.dtype)
+            # project point on R into valid range (epsilon border)
+            r = manifold.projx(r)
+            # determine distance from origin
+            max_dist_0 = manifold.dist0(r).item()
+        else:
+            max_dist_0 = np.pi * R
+        # adjust line interval for spherical geometry
+        circumference = 2*np.pi*R
+
+        # determine reasonable number of geodesics
+        # choose the grid interval size always as if we'd be in spherical
+        # geometry, such that the grid interpolates smoothly and evenly
+        # divides the sphere circumference
+        n_geodesics_per_circumference = 4 * 6  # multiple of 4!
+        n_geodesics_per_quadrant = n_geodesics_per_circumference // 2
+        grid_interval_size = circumference / n_geodesics_per_circumference
+        if K < 0:
+            n_geodesics_per_quadrant = int(max_dist_0 / grid_interval_size)
+
+        # create time evaluation array for geodesics
+        if K < 0:
+            min_t = -1.2*max_dist_0
+        else:
+            min_t = -circumference/2.0
+        t = torch.linspace(min_t, -min_t, N_EVALS_PER_GEODESIC)[:, None]
+
+        # define a function to plot the geodesics
+        def plot_geodesic(gv):
+            ax.plot(*gv.t().numpy(), STYLE, color=COLOR, linewidth=LINE_WIDTH)
+
+        # define geodesic directions
+        u_x = torch.tensor((0.0, 1.0))
+        u_y = torch.tensor((1.0, 0.0))
+
+        # add origin x/y-crosshair
+        o = torch.tensor((0.0, 0.0))
+        if K < 0:
+            x_geodesic = manifold.geodesic_unit(t, o, u_x)
+            y_geodesic = manifold.geodesic_unit(t, o, u_y)
+            plot_geodesic(x_geodesic)
+            plot_geodesic(y_geodesic)
+        else:
+            # add the crosshair manually for the sproj of sphere
+            # because the lines tend to get thicker if plotted
+            # as done for K<0
+            ax.axvline(0, linestyle=STYLE, color=COLOR, linewidth=LINE_WIDTH)
+            ax.axhline(0, linestyle=STYLE, color=COLOR, linewidth=LINE_WIDTH)
+
+        # add geodesics per quadrant
+        for i in range(1, n_geodesics_per_quadrant):
+            i = torch.as_tensor(float(i))
+            # determine start of geodesic on x/y-crosshair
+            x = manifold.geodesic_unit(i*grid_interval_size, o, u_y)
+            y = manifold.geodesic_unit(i*grid_interval_size, o, u_x)
+
+            # compute point on geodesics
+            x_geodesic = manifold.geodesic_unit(t, x, u_x)
+            y_geodesic = manifold.geodesic_unit(t, y, u_y)
+
+            # plot geodesics
+            plot_geodesic(x_geodesic)
+            plot_geodesic(y_geodesic)
+            if K < 0:
+                plot_geodesic(-x_geodesic)
+                plot_geodesic(-y_geodesic)
+    @torch.no_grad()
+    def plot_sphere_2d(self, batch):
+        os.makedirs("figs", exist_ok=True)
+
+        x0 = batch["x0"]
+        x1 = batch["x1"]
+        trajs = self.sample_all(x1.shape, device=x1.device, x0=x0)
+        samples = trajs[-1]
+
+        c = getattr(self.manifold, "c", 1.0)
+        if torch.is_tensor(c):
+            c = c.item()
+        R = 1.0 / np.sqrt(c) if c > 0 else 1.0
+
+        def project(tensor):
+            x, y, z = tensor[..., 0], tensor[..., 1], tensor[..., 2]
+            denom = R - z + 1e-7
+            return torch.stack([R * x / denom, R * y / denom], dim=-1)
+
+        x0_2d = project(x0).cpu().numpy()
+        samples_2d = project(samples).cpu().numpy()
+        trajs_2d = project(trajs).cpu().numpy()
+
+        plt.figure(figsize=(8, 8))
+        ax = plt.gca()
+
+        equator = plt.Circle((0, 0), R, color="black", fill=False, linestyle='--', alpha=0.5)
+        ax.add_artist(equator)
+
+        self.add_geodesic_grid(ax, self.manifold, line_width=0.2)
+
+        for i in range(min(100, trajs_2d.shape[1])):
+            ax.plot(trajs_2d[:, i, 0], trajs_2d[:, i, 1], color="grey", alpha=0.3, linewidth=0.5)
+
+        plt.scatter(x0_2d[:, 0], x0_2d[:, 1], s=5, color="red")
+        plt.scatter(samples_2d[:, 0], samples_2d[:, 1], s=5, color="blue")
+
+        plt.xlim([-3 * R, 3 * R])
+        plt.ylim([-3 * R, 3 * R])
+        ax.set_aspect('equal')
+        plt.axis("off")
+        plt.savefig(f"figs/sphere2d-{self.global_step:06d}.png")
         plt.close()
 
     @torch.no_grad()
