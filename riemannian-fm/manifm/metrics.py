@@ -232,8 +232,8 @@ class ManifoldMetricHandler:
         if self.m_type == "euclidean":
             return x.mean(dim=0, keepdim=True)
 
-        with torch.no_grad():
-            mu = x[0:1].clone()  # initial center
+        with torch.no_grad(): 
+            mu = self.get_origin(x).clone()  # start at origin, changed from random sample
 
             for _ in range(max_iter):
                 v = self.manifold.logmap(mu.expand_as(x), x)
