@@ -8,7 +8,9 @@ from manifm.manifolds import Euclidean, SphereCurvature, PoincareBall
 
 
 class ManifoldMetricHandler:
-    """ Class to handle all metrics systematically across curvatures """
+    """
+    Class to handle all metrics systematically across curvatures
+    """
     def __init__(self, cfg):
         self.cfg = cfg                  # store configuration dictionary
 
@@ -132,7 +134,9 @@ class ManifoldMetricHandler:
     
 
     def calculate_mmd(self, x_gen, x_real, sigma = None):
-        """ MMD with geodesic RBF kernel """
+        """
+        MMD with geodesic RBF kernel
+        """
                                         # generated samples pairwise distances
         dxx = self.pairwise_dist(x_gen, x_gen)
                                         # real samples pairwise distances
@@ -164,7 +168,7 @@ class ManifoldMetricHandler:
             eps_multiplier = None,
         ):
         """
-        Measures how much of the target support is reached by generated samples.
+        Measures how much of the target support is reached by generated samples
         """
         d = self.pairwise_dist(x_real, x_gen)
 
@@ -190,7 +194,7 @@ class ManifoldMetricHandler:
             eps_multiplier = None,
         ):
         """
-        Measures how many generated samples lie near the target support.
+        Measures how many generated samples lie near the target support
         """
         d = self.pairwise_dist(x_gen, x_real)
 
