@@ -5,14 +5,16 @@ import os
 from geomloss import SamplesLoss
 
 from manifm.manifolds import Euclidean, SphereCurvature, PoincareBall
+from geoopt import ManifoldTensor
 
 
 class ManifoldMetricHandler:
     """
     Class to handle all metrics systematically across curvatures
     """
+
     def __init__(self, cfg):
-        self.cfg = cfg                  # store configuration dictionary
+        self.cfg = cfg  # store configuration dictionary
 
         self.active_metrics = cfg.get(  # choose metrics
             "metrics_to_use",
@@ -31,17 +33,19 @@ class ManifoldMetricHandler:
 
         self.m_type = cfg.get("manifold", "euclidean").lower()
         self.curvature = cfg.get("curvature", 1.0)
-        self.origin = cfg.get("origin", None) #! How to define the origin in the first place?
+        self.origin = cfg.get(
+            "origin", None
+        )  #! How to define the origin in the first place?
 
         if self.m_type == "euclidean":
             self.manifold = Euclidean()
-            self.kappa = 0.0            # flat geometry
+            self.kappa = 0.0  # flat geometry
         elif self.m_type == "sphere":
-            self.manifold = SphereCurvature(c = self.curvature)
-            self.kappa = self.curvature # positive curvature (spherical)
+            self.manifold = SphereCurvature(c=self.curvature)
+            self.kappa = self.curvature  # positive curvature (spherical)
         elif self.m_type == "poincare":
-            self.manifold = PoincareBall(c = self.curvature)
-            self.kappa = -self.curvature # negative curvature (hyperbolic)
+            self.manifold = PoincareBall(c=self.curvature)
+            self.kappa = -self.curvature  # negative curvature (hyperbolic)
         else:
             raise ValueError(f"unsupported manifold: {self.m_type}")
 
@@ -54,39 +58,37 @@ class ManifoldMetricHandler:
         if self.origin is not None:
             origin = self.origin
             if not torch.is_tensor(origin):
-                origin = torch.tensor(origin, device = x.device, dtype = x.dtype)
-            return origin.to(device = x.device, dtype = x.dtype).view(1, -1)
+                origin = torch.tensor(origin, device=x.device, dtype=x.dtype)
+            return origin.to(device=x.device, dtype=x.dtype).view(1, -1)
 
         if self.m_type == "euclidean":
-            return torch.zeros(1, x.shape[-1], device = x.device, dtype = x.dtype)
+            return torch.zeros(1, x.shape[-1], device=x.device, dtype=x.dtype)
 
         if self.m_type == "poincare":
-            return torch.zeros(1, x.shape[-1], device = x.device, dtype = x.dtype)
+            return torch.zeros(1, x.shape[-1], device=x.device, dtype=x.dtype)
 
         #! See if this lines up with the SphereCurvature class
         if self.m_type == "sphere":
             radius = 1.0 / torch.sqrt(
-                torch.as_tensor(self.curvature, device = x.device, dtype = x.dtype)
+                torch.as_tensor(self.curvature, device=x.device, dtype=x.dtype)
             )
-            origin = torch.zeros(1, x.shape[-1], device = x.device, dtype = x.dtype)
+            origin = torch.zeros(1, x.shape[-1], device=x.device, dtype=x.dtype)
             origin[:, 0] = radius
             return origin
 
         raise ValueError(f"origin not defined for manifold: {self.m_type}")
 
-
     def radial_values(self, x):
         origin = self.get_origin(x).expand_as(x)
         return self.manifold.dist(origin, x)
 
-   
     def calculate_sinkhorn_knopp(
-            self,                       
-            x_gen,
-            x_real,
-            p = 1,                      # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
-            blur = 0.05
-        ):
+        self,
+        x_gen,
+        x_real,
+        p=1,  # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
+        blur=0.05,
+    ):
         """
         A measure of distributional misalignment: the
         Sinkhorn-Knopp algorithm approximates the Wasserstein
@@ -103,70 +105,68 @@ class ManifoldMetricHandler:
             blur = self.cfg.get("sinkhorn_blur", 0.05)
 
         if self.m_type == "euclidean":
-            solver = SamplesLoss(loss = "sinkhorn", p = p, blur = blur)
+            solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur)
             val = solver(x_gen, x_real)
         else:
+
             def geodesic_cost(x, y):
-                                        # do an explicit pairwise comparison
+                # do an explicit pairwise comparison
                 x_exp = x.unsqueeze(1)  # (N, 1, D)
                 y_exp = y.unsqueeze(0)  # (1, M, D)
                 return self.manifold.dist(x_exp, y_exp) ** p
-            solver = SamplesLoss(loss = "sinkhorn", p = p, cost = geodesic_cost, blur = blur)
+
+            solver = SamplesLoss(loss="sinkhorn", p=p, cost=geodesic_cost, blur=blur)
             val = solver(x_gen, x_real)
 
-        val = torch.clamp(val, min = 0.0) ** (1.0 / p)
+        val = torch.clamp(val, min=0.0) ** (1.0 / p)
         #! TODO: How to normalize Wasserstein/Sinkhorn-Knopp across curvatures?
         #! Add an if-s with boolean normalize parameter
         #! Also add it to the calculate_all() function below once chosen
         return val
 
-
     #! Add decomposed Sinkhorn Knopp for radial and angular
-
 
     def pairwise_dist(self, x, y):
         if self.m_type == "euclidean":
-            return torch.cdist(x, y, p = 2)
+            return torch.cdist(x, y, p=2)
 
         x_exp = x.unsqueeze(1)
         y_exp = y.unsqueeze(0)
         return self.manifold.dist(x_exp, y_exp)
-    
 
-    def calculate_mmd(self, x_gen, x_real, sigma = None):
+    def calculate_mmd(self, x_gen, x_real, sigma=None):
         """
         MMD with geodesic RBF kernel
         """
-                                        # generated samples pairwise distances
+        # generated samples pairwise distances
         dxx = self.pairwise_dist(x_gen, x_gen)
-                                        # real samples pairwise distances
+        # real samples pairwise distances
         dyy = self.pairwise_dist(x_real, x_real)
-                                        # distances between generated and real
+        # distances between generated and real
         dxy = self.pairwise_dist(x_gen, x_real)
 
-        if sigma is None:               # use adaptive sigma if not provided
-                                        # flatten all distances and remove non-zero
-            vals = dxy.detach().flatten()                         
-            vals = vals[vals > 0]                                 
+        if sigma is None:  # use adaptive sigma if not provided
+            # flatten all distances and remove non-zero
+            vals = dxy.detach().flatten()
+            vals = vals[vals > 0]
             sigma = torch.median(vals)  # = median of positive distances; then clamp
-            sigma = torch.clamp(sigma, min = 1e-6)
-            
-                                        # RBF kernel for generated, real, and cross samples
-        kxx = torch.exp(-(dxx ** 2) / (2 * sigma ** 2))
-        kyy = torch.exp(-(dyy ** 2) / (2 * sigma ** 2))
-        kxy = torch.exp(-(dxy ** 2) / (2 * sigma ** 2))
+            sigma = torch.clamp(sigma, min=1e-6)
 
-                                        # return MMD statistic
+            # RBF kernel for generated, real, and cross samples
+        kxx = torch.exp(-(dxx**2) / (2 * sigma**2))
+        kyy = torch.exp(-(dyy**2) / (2 * sigma**2))
+        kxy = torch.exp(-(dxy**2) / (2 * sigma**2))
+
+        # return MMD statistic
         return kxx.mean() + kyy.mean() - 2 * kxy.mean()
-    
 
     def calculate_epsilon_coverage(
-            self,
-            x_gen,
-            x_real,
-            eps = None,
-            eps_multiplier = None,
-        ):
+        self,
+        x_gen,
+        x_real,
+        eps=None,
+        eps_multiplier=None,
+    ):
         """
         Measures how much of the target support is reached by generated samples
         """
@@ -178,21 +178,20 @@ class ManifoldMetricHandler:
         if eps is None:
             d_real = self.pairwise_dist(x_real, x_real)
             n = x_real.shape[0]
-            d_real = d_real + torch.eye(n, device = x_real.device) * 1e9
-            eps = d_real.min(dim = 1).values.median()
+            d_real = d_real + torch.eye(n, device=x_real.device) * 1e9
+            eps = d_real.min(dim=1).values.median()
             eps = eps_multiplier * eps
 
-        nearest = d.min(dim = 1).values
+        nearest = d.min(dim=1).values
         return (nearest <= eps).float().mean()
-    
 
     def calculate_epsilon_precision(
         self,
         x_gen,
         x_real,
-        eps = None,
-        eps_multiplier = None,
-        ):
+        eps=None,
+        eps_multiplier=None,
+    ):
         """
         Measures how many generated samples lie within epsilon of the target support
         """
@@ -204,14 +203,13 @@ class ManifoldMetricHandler:
         if eps is None:
             d_real = self.pairwise_dist(x_real, x_real)
             n = x_real.shape[0]
-            d_real = d_real + torch.eye(n, device = x_real.device) * 1e9
-            eps = d_real.min(dim = 1).values.median()
+            d_real = d_real + torch.eye(n, device=x_real.device) * 1e9
+            eps = d_real.min(dim=1).values.median()
             eps = eps_multiplier * eps
 
-        nearest = d.min(dim = 1).values
+        nearest = d.min(dim=1).values
         return (nearest <= eps).float().mean()
 
-    
     # def _norm(self, v, x):
     #     if self.m_type != "euclidean":
     #         norm = torch.sqrt(self.manifold.inner(x, v, v).clamp(min = 1e-12))
@@ -225,34 +223,27 @@ class ManifoldMetricHandler:
         """
         #! Verify whether this is correct...
         if self.m_type == "euclidean":
-            return torch.linalg.norm(v, dim = -1)
+            return torch.linalg.norm(v, dim=-1)
 
         inner = self.manifold.inner(x, v, v)
-        return torch.sqrt(torch.clamp(inner, min = 1e-12))
+        return torch.sqrt(torch.clamp(inner, min=1e-12))
 
-
-    def frechet_mean(
-            self,
-            x,
-            max_iter = 50,
-            lr = 0.1
-        ):
+    def frechet_mean(self, x, max_iter=50, lr=0.1):
         if self.m_type == "euclidean":
-            return x.mean(dim = 0, keepdim = True)
+            return x.mean(dim=0, keepdim=True)
 
         with torch.no_grad():
-            mu = x[0 : 1].clone()       # initial center
+            mu = x[0:1].clone()  # initial center
 
             for _ in range(max_iter):
                 v = self.manifold.logmap(mu.expand_as(x), x)
-                step = v.mean(dim = 0, keepdim = True)
+                step = v.mean(dim=0, keepdim=True)
                 mu = self.manifold.expmap(mu, lr * step)
 
                 if hasattr(self.manifold, "projx"):
                     mu = self.manifold.projx(mu)
         return mu
 
-    
     def calculate_frechet_variance(self, samples):
         """
         Calculate Frechet variance using Frechet mean
@@ -261,16 +252,14 @@ class ManifoldMetricHandler:
         mu_expanded = mu.expand_as(samples)
         return self.manifold.dist(samples, mu_expanded).pow(2).mean()
 
-
     def calculate_dispersion(self, samples):
         """
         Pairwise dispersion calculation: simpler version of Frechet variance
         """
         d = self.pairwise_dist(samples, samples)
         n = samples.shape[0]
-        mask = ~torch.eye(n, dtype = torch.bool, device = samples.device)
+        mask = ~torch.eye(n, dtype=torch.bool, device=samples.device)
         return d[mask].mean()
-    
 
     def calculate_dispersion_ratio(self, x_pred, x_target):
         """
@@ -278,8 +267,7 @@ class ManifoldMetricHandler:
         """
         gen_disp = self.calculate_dispersion(x_pred)
         real_disp = self.calculate_dispersion(x_target)
-        return gen_disp / torch.clamp(real_disp, min = 1e-8)
-    
+        return gen_disp / torch.clamp(real_disp, min=1e-8)
 
     def calculate_vector_norm_stats(self, v, x):
         """
@@ -289,12 +277,12 @@ class ManifoldMetricHandler:
 
         return {
             "mean": norms.mean(),
-            "std": norms.std(unbiased = False),
+            "std": norms.std(unbiased=False),
             "max": norms.max(),
             "p95": torch.quantile(norms, 0.95),
         }
-    #! Do we need divergence or some more in-depth metrics? 
 
+    #! Do we need divergence or some more in-depth metrics?
 
     def calculate_tangency_violation(self, x, v):
         """
@@ -304,7 +292,7 @@ class ManifoldMetricHandler:
             v_proj = self.manifold.proju(x, v)
             violation = self._norm(v - v_proj, x)
             norm = self._norm(v, x)
-            relative = violation / torch.clamp(norm, min = 1e-8)
+            relative = violation / torch.clamp(norm, min=1e-8)
 
             return {
                 "absolute": violation.mean(),
@@ -312,36 +300,34 @@ class ManifoldMetricHandler:
             }
 
         if self.m_type == "sphere":
-            violation = torch.abs((x * v).sum(dim = -1))
-            norm = torch.linalg.norm(v, dim = -1)
-            relative = violation / torch.clamp(norm, min = 1e-8)
+            violation = torch.abs((x * v).sum(dim=-1))
+            norm = torch.linalg.norm(v, dim=-1)
+            relative = violation / torch.clamp(norm, min=1e-8)
 
             return {
                 "absolute": violation.mean(),
                 "relative": relative.mean(),
             }
 
-        zero = torch.tensor(0.0, device = x.device, dtype = x.dtype)
+        zero = torch.tensor(0.0, device=x.device, dtype=x.dtype)
 
         return {
             "absolute": zero,
             "relative": zero,
         }
 
-
     def finite_fraction(self, x):
         """
         Stability: Fraction of samples without NaN or inf
         """
-        return torch.isfinite(x).all(dim = -1).float().mean()
-
+        return torch.isfinite(x).all(dim=-1).float().mean()
 
     def calculate_rfm_loss(
-            self,
-            v_pred,
-            v_target,
-            x_t,
-        ):
+        self,
+        v_pred,
+        v_target,
+        x_t,
+    ):
         """
         Computes RFM vector-field error
 
@@ -352,7 +338,7 @@ class ManifoldMetricHandler:
         diff = v_pred - v_target
 
         if self.m_type == "euclidean":
-            loss = (diff ** 2).sum(dim = -1).mean()
+            loss = (diff**2).sum(dim=-1).mean()
         else:
             loss = self.manifold.inner(x_t, diff, diff).mean()
 
@@ -363,21 +349,57 @@ class ManifoldMetricHandler:
         v_target_n = v_target / (n_target + 1e-8)
 
         if self.m_type == "euclidean":
-            alignment = (v_pred_n * v_target_n).sum(dim = -1).mean()
+            alignment = (v_pred_n * v_target_n).sum(dim=-1).mean()
         else:
             alignment = self.manifold.inner(x_t, v_pred_n, v_target_n).mean()
 
         return loss, alignment
 
-    
-    def calculate_all(
-            self,
-            pred,
-            target,
-            mode = "sample",
-            step = 0,
-            x_t = None
-        ):
+    def kl_divergence(
+        self, x: ManifoldTensor, mu: ManifoldTensor, p: torch.Tensor, eps: float = 1e-8
+    ) -> float:
+        """
+        Compute the Kullback-Leibler divergence between the proportion of samples
+        mapped to each Gaussian and the true distribution.
+
+        Args:
+            x: coordinates of the transported samples on the manifold (N x d).
+            mu: coordinates of the Gaussian centers on the manifold (K x d).
+            p: importance weights of each Gaussian.
+            eps: small offset for stabilising KLD computation.
+
+        Returns:
+            kld: the KL-Divergence.
+        """
+
+        # expand dimensions for broadcasting
+        x_exp = x.unsqueeze(1)  # Shape: (N, 1, d)
+        mu_exp = mu.unsqueeze(0)  # Shape: (1, k, d)
+
+        # compute the true pairwise hyperbolic distances directly
+        distances = self.manifold.dist(x_exp, mu_exp)  # Shape: (N, k)
+
+        # find the index of the closest mu for each x
+        nearest_gaussian = torch.argmin(distances, dim=1)
+
+        # compute proportions
+        transported_p = torch.zeros_like(p)
+        idx, counts = nearest_gaussian.unique(return_counts=True)
+        transported_p[idx] = counts / counts.sum().float()
+
+        transported_p += eps
+        transported_p = transported_p / transported_p.sum()
+
+        # compute KL divergence
+        kld = torch.nn.functional.kl_div(
+            input=torch.log(transported_p),
+            target=p,
+            reduction="sum",
+        )
+
+        return kld
+
+    def calculate_all(self, pred, target, mode="sample", step=0, x_t=None):
         results = {}
 
         if mode == "vector":
@@ -396,20 +418,25 @@ class ManifoldMetricHandler:
             results["val_vec/norm_p95"] = norm_stats["p95"]
             results["val_vec/tangency_violation_abs"] = tangent_stats["absolute"]
             results["val_vec/tangency_violation_rel"] = tangent_stats["relative"]
-            
-        elif mode == "sample":
 
+        elif mode == "sample":
             if "sinkhorn_knopp" in self.active_metrics:
-                results["val_sample/sinkhorn_knopp"] = self.calculate_sinkhorn_knopp(pred, target)
+                results["val_sample/sinkhorn_knopp"] = self.calculate_sinkhorn_knopp(
+                    pred, target
+                )
 
             if "mmd" in self.active_metrics:
                 results["val_sample/mmd"] = self.calculate_mmd(pred, target)
 
             if "epsilon_coverage" in self.active_metrics:
-                results["val_sample/epsilon_coverage"] = self.calculate_epsilon_coverage(pred, target)
+                results["val_sample/epsilon_coverage"] = (
+                    self.calculate_epsilon_coverage(pred, target)
+                )
 
             if "epsilon_precision" in self.active_metrics:
-                results["val_sample/epsilon_precision"] = self.calculate_epsilon_precision(pred, target)
+                results["val_sample/epsilon_precision"] = (
+                    self.calculate_epsilon_precision(pred, target)
+                )
 
             if "frechet_variance" in self.active_metrics:
                 frechet_pred = self.calculate_frechet_variance(pred)
@@ -418,7 +445,7 @@ class ManifoldMetricHandler:
                 results["val_sample/frechet_variance_pred"] = frechet_pred
                 results["val_sample/frechet_variance_target"] = frechet_target
                 results["val_sample/frechet_variance_ratio"] = (
-                    frechet_pred / torch.clamp(frechet_target, min = 1e-8)
+                    frechet_pred / torch.clamp(frechet_target, min=1e-8)
                 )
 
             if "dispersion" in self.active_metrics:
@@ -427,7 +454,9 @@ class ManifoldMetricHandler:
 
                 results["val_sample/dispersion_predicted"] = disp_pred
                 results["val_sample/dispersion_target"] = disp_target
-                results["val_sample/dispersion_ratio"] = disp_pred / torch.clamp(disp_target, min = 1e-8)
+                results["val_sample/dispersion_ratio"] = disp_pred / torch.clamp(
+                    disp_target, min=1e-8
+                )
 
             #! Should add radial/angular decomposition here
 
@@ -436,51 +465,41 @@ class ManifoldMetricHandler:
 
             if pred.shape == target.shape:
                 if self.m_type == "euclidean":
-                    dist_val = torch.linalg.norm(pred - target, dim = -1).mean()
+                    dist_val = torch.linalg.norm(pred - target, dim=-1).mean()
                 else:
                     dist_val = self.manifold.dist(pred, target).mean()
-                
+
                 results["val_sample/geodesic_dist"] = dist_val
             if self.cfg.get("save_densities", False):
                 self.save_density_state(pred, target, step)
 
         return results
 
-   
     def save_density_state(
-            self,
-            x_gen,
-            x_real,
-            step,
-        ):
+        self,
+        x_gen,
+        x_real,
+        step,
+    ):
         path = "results/densities"
-        os.makedirs(path, exist_ok = True)
+        os.makedirs(path, exist_ok=True)
 
         manifold_name = self.manifold.__class__.__name__
 
         data = {
-            "x_gen" : x_gen.detach().cpu(),
-            "x_real" : x_real.detach().cpu(),
-            "step" : step,
-            "manifold" : manifold_name,
-            "manifold_type" : self.m_type,
-            "curvature_backend" : self.curvature,
-            "kappa" : self.kappa,
-            "origin" : None if self.origin is None else self.origin,
-            "num_samples" : x_gen.shape[0],
-            "cfg" : self.cfg,
+            "x_gen": x_gen.detach().cpu(),
+            "x_real": x_real.detach().cpu(),
+            "step": step,
+            "manifold": manifold_name,
+            "manifold_type": self.m_type,
+            "curvature_backend": self.curvature,
+            "kappa": self.kappa,
+            "origin": None if self.origin is None else self.origin,
+            "num_samples": x_gen.shape[0],
+            "cfg": self.cfg,
         }
 
         torch.save(data, f"{path}/{manifold_name}_step_{step:06d}.pt")
-
-
-
-
-
-
-
-
-
 
 
 # import torch
@@ -628,210 +647,4 @@ class ManifoldMetricHandler:
 #             "step": step,
 #             "manifold": manifold_name
 #         }
-<<<<<<< HEAD
 #         torch.save(data, filename)
-
-import torch
-import os
-from geomloss import SamplesLoss
-from geoopt import ManifoldTensor
-from scipy.special import kl_div
-
-from manifm.manifolds import Euclidean, SphereCurvature, PoincareBall
-
-
-class ManifoldMetricHandler:
-    def __init__(self, cfg):
-        self.cfg = cfg
-
-        self.active_metrics = cfg.get(
-            "metrics_to_use", ["mse", "wasserstein", "diversity", "rfm"]
-        )
-
-        self.m_type = cfg.get("manifold", "euclidean").lower()
-        curvature = cfg.get("curvature", 1.0)
-
-        if self.m_type == "euclidean":
-            self.manifold = Euclidean()
-        elif self.m_type == "sphere":
-            self.manifold = SphereCurvature(c=curvature)
-        elif self.m_type == "poincare":
-            self.manifold = PoincareBall(c=curvature)
-        else:
-            raise ValueError(f"Unsupported manifold: {self.m_type}")
-
-    def calculate_wasserstein(self, x_gen, x_real, p=1, blur=0.05):
-        """
-        Calculates W_p(mu, nu) = inf E[d(x,y)^p]^(1/p).
-        Measures total distributional accuracy.
-        """
-
-        if self.m_type == "euclidean":
-            cost = torch.cdist(x_gen, x_real, p=2) ** p
-
-            solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur)
-            return solver(x_gen, x_real) ** (1 / p)
-
-        def geodesic_cost(x, y):
-            # Explicit pairwise expansion
-            x_exp = x.unsqueeze(1)  # (N, 1, D)
-            y_exp = y.unsqueeze(0)  # (1, M, D)
-
-            return self.manifold.dist(x_exp, y_exp) ** p
-
-        solver = SamplesLoss(loss="sinkhorn", p=p, cost=geodesic_cost, blur=blur)
-        return solver(x_gen, x_real) ** (1 / p)
-
-    def _norm(self, v, x):
-        if self.m_type != "euclidean":
-            norm = torch.sqrt(self.manifold.inner(x, v, v).clamp(min=1e-12))
-        else:
-            norm = torch.linalg.norm(v, dim=-1)
-
-        return norm
-
-    def calculate_rfm_error(self, v_pred, v_target, x_t):
-        """
-        v_pred, v_target ∈ T_{x_t}M #tangent vectors at x_t
-        """
-        diff = v_pred - v_target
-
-        error = self._norm(diff, x_t).mean()
-
-        n_pred = self._norm(v_pred, x_t).unsqueeze(-1)
-        n_target = self._norm(v_target, x_t).unsqueeze(-1)
-
-        v_pred_n = v_pred / (n_pred + 1e-8)
-        v_target_n = v_target / (n_target + 1e-8)
-
-        if hasattr(self.manifold, "inner"):
-            alignment = self.manifold.inner(x_t, v_pred_n, v_target_n).mean()
-        else:
-            alignment = (v_pred_n * v_target_n).sum(dim=-1).mean()
-
-        return error, alignment
-
-    def frechet_mean(self, x, max_iter=50, lr=0.1):
-        """
-        Computes intrinsic mean using Riemannian gradient descent.
-        """
-
-        if self.manifold.__class__.__name__ == "Euclidean":
-            return x.mean(dim=0, keepdim=True)
-
-        mu = x[0:1].clone()
-
-        for _ in range(max_iter):
-            v = self.manifold.logmap(mu.expand_as(x), x)
-            grad = -v.mean(dim=0, keepdim=True)
-            mu = self.manifold.expmap(mu, -lr * grad)
-
-        return mu
-
-    def calculate_diversity(self, samples):
-        """
-        Intrinsic variance using Fréchet mean.
-        """
-        mu = self.frechet_mean(samples)
-
-        # don't edit, critical fix for pointwise distance calculation
-        mu_expanded = mu.expand_as(samples)
-        variance = self.manifold.dist(samples, mu_expanded).pow(2).mean()
-        return variance
-
-    def kl_divergence(
-        self, x: ManifoldTensor, mu: ManifoldTensor, p: torch.Tensor, eps: float = 1e-8
-    ) -> float:
-        """
-        Compute the Kullback-Leibler divergence between the proportion of samples
-        mapped to each Gaussian and the true distribution.
-
-        Args:
-            x: coordinates of the transported samples on the manifold (N x d).
-            mu: coordinates of the Gaussian centers on the manifold (K x d).
-            p: importance weights of each Gaussian.
-            eps: small offset for stabilising KLD computation.
-
-        Returns:
-            kld: the KL-Divergence.
-        """
-
-        # expand dimensions for broadcasting
-        x_exp = x.unsqueeze(1)  # Shape: (N, 1, d)
-        mu_exp = mu.unsqueeze(0)  # Shape: (1, k, d)
-
-        # compute the true pairwise hyperbolic distances directly
-        distances = self.manifold.dist(x_exp, mu_exp)  # Shape: (N, k)
-
-        # find the index of the closest mu for each x
-        nearest_gaussian = torch.argmin(distances, dim=1)
-
-        # compute proportions
-        transported_p = torch.zeros_like(p)
-        idx, counts = nearest_gaussian.unique(return_counts=True)
-        transported_p[idx] = counts / counts.sum().float()
-
-        transported_p += eps
-        transported_p = transported_p / transported_p.sum()
-
-        # compute KL divergence
-        kld = torch.nn.functional.kl_div(
-            input=torch.log(transported_p),
-            target=p,
-            reduction="sum",
-        )
-
-        return kld
-
-    def calculate_all(self, pred, target, mode="sample", step=0, x_t=None):
-        results = {}
-
-        if mode == "vector":
-            assert x_t is not None, "x_t required for RFM metric"
-
-            error, align = self.calculate_rfm_error(pred, target, x_t)
-
-            results["val_vec/rfm_loss"] = error
-            results["val_vec/alignment"] = align
-            results["val_vec/mse"] = torch.mean((pred - target) ** 2)
-
-        elif mode == "sample":
-            if "wasserstein" in self.active_metrics:
-                results["val_sample/wasserstein"] = self.calculate_wasserstein(
-                    pred, target
-                )
-
-            if "diversity" in self.active_metrics:
-                results["val_sample/diversity"] = self.calculate_diversity(pred)
-
-            if pred.shape == target.shape:
-                if self.m_type == "euclidean":
-                    dist_val = torch.linalg.norm(pred - target, dim=-1).mean()
-                else:
-                    dist_val = self.manifold.dist(pred, target).mean()
-
-                results["val_sample/geodesic_dist"] = dist_val
-            if self.cfg.get("save_densities", False):
-                self.save_density_state(pred, target, step)
-
-        return results
-
-    def save_density_state(self, x_gen, x_real, step):
-        path = "results/densities"
-        os.makedirs(path, exist_ok=True)
-
-        manifold_name = self.manifold.__class__.__name__
-
-        data = {
-            "x_gen": x_gen.detach().cpu(),
-            "x_real": x_real.detach().cpu(),
-            "step": step,
-            "manifold": manifold_name,
-            "curvature": getattr(self.manifold, "c", None),
-            "num_samples": x_gen.shape[0],
-        }
-
-        torch.save(data, f"{path}/{manifold_name}_step_{step:06d}.pt")
-=======
-#         torch.save(data, filename)
->>>>>>> a5e4e1c41b226ae578d6d8e70b666bccfa529896
