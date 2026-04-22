@@ -833,8 +833,8 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         return {"loss": loss}
 
-    def training_epoch_end(self, outputs: List[Any]):
-        # `outputs` is a list of dicts returned from `training_step()`
+    # def training_epoch_end(self, outputs):
+    def on_train_epoch_end(self):
         self.train_metric.reset()
 
     def validation_step(self, batch: Any, batch_idx: int):
@@ -889,15 +889,11 @@ class ManifoldFMLitModule(pl.LightningModule):
             self._wandb_log_pt("eval_t_grid", {"t_grid": t_grid})   
         return {"loss": loss}
 
-    def validation_epoch_end(self, outputs: List[Any]):
-        val_loss = self.val_metric.compute()  # get val accuracy from current epoch
+    # def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
+        val_loss = self.val_metric.compute()
         self.val_metric_best.update(val_loss)
-        self.log(
-            "val/loss_best",
-            self.val_metric_best.compute(),
-            on_epoch=True,
-            prog_bar=True,
-        )
+        self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
         self.val_metric.reset()
 
     def test_step(self, batch: Any, batch_idx: int):
@@ -912,7 +908,8 @@ class ManifoldFMLitModule(pl.LightningModule):
         self.test_metric.update(-logprob)
         return {"loss": loss}
 
-    def test_epoch_end(self, outputs: List[Any]):
+    # def test_epoch_end(self):
+    def on_test_epoch_end(self):
         self.test_metric.reset()
 
     def configure_optimizers(self):

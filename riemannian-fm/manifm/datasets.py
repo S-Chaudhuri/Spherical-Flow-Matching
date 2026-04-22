@@ -653,9 +653,9 @@ class GeneralDataset(Dataset):
                 )
 
         elif manifold == "sphere":
-            if not torch.all(torch.abs(norms - 1.0) < tol):
+            if not torch.all(torch.abs(norms - np.sqrt(1/self.cfg.curvature)) < tol):
                 raise ValueError(
-                    f"Sphere mean(s) must have norm ≈ 1. Got norms: {norms}"
+                    f"Sphere mean(s) must have norm ≈ {np.sqrt(1/self.cfg.curvature)}. Got norms: {norms}"
                 )
 
         elif manifold == "euclidean":
@@ -984,6 +984,21 @@ def _get_dataset(cfg):
     return dataset, expand_factor
 
 
+class ExpandDataset(Dataset):
+    def __init__(self, dataset: Dataset, expand_factor: int = 1):
+        self.dataset = dataset
+        self.expand_factor = max(1, int(expand_factor))
+
+    def __len__(self):
+        return len(self.dataset) * self.expand_factor
+
+    def __getitem__(self, idx):
+        base_len = len(self.dataset)
+        if base_len == 0:
+            raise IndexError("Empty dataset")
+        return self.dataset[int(idx) % base_len]
+
+
 def get_loaders(cfg):
     dataset, expand_factor = _get_dataset(cfg)
 
@@ -1004,13 +1019,26 @@ def get_loaders(cfg):
     train_set = ExpandDataset(train_set, expand_factor=expand_factor)
 
     train_loader = DataLoader(
-        train_set, cfg.optim.batch_size, shuffle=True, pin_memory=True, drop_last=True
+        train_set, 
+        cfg.optim.batch_size, 
+        shuffle=True, 
+        pin_memory=True, 
+        drop_last=True, 
+        num_workers=cfg.get("num_workers", 8)
     )
     val_loader = DataLoader(
-        val_set, cfg.optim.val_batch_size, shuffle=False, pin_memory=True
+        val_set, 
+        cfg.optim.val_batch_size, 
+        shuffle=False,
+        pin_memory=True,
+        num_workers=cfg.get("num_workers", 8)
     )
     test_loader = DataLoader(
-        test_set, cfg.optim.val_batch_size, shuffle=False, pin_memory=True
+        test_set,
+        cfg.optim.val_batch_size, 
+        shuffle=False, 
+        pin_memory=True,
+        num_workers=cfg.get("num_workers", 8)
     )
 
     return train_loader, val_loader, test_loader
