@@ -605,12 +605,12 @@ class GeneralDataset(Dataset):
 
         # --- Manifold ---
         self.manifold_name = gcfg.manifold
-        curvature = float(gcfg.get("curvature", 1.0))
+        self.curvature = float(gcfg.get("curvature", 1.0))
 
         if self.manifold_name == "sphere":
-            self.manifold = SphereCurvature(c=curvature)
+            self.manifold = SphereCurvature(c=self.curvature)
         elif self.manifold_name == "poincare":
-            self.manifold = PoincareBall(c=curvature)
+            self.manifold = PoincareBall(c=self.curvature)
         elif self.manifold_name == "euclidean":
             self.manifold = Euclidean()
         else:
@@ -653,9 +653,9 @@ class GeneralDataset(Dataset):
                 )
 
         elif manifold == "sphere":
-            if not torch.all(torch.abs(norms - np.sqrt(1/self.cfg.curvature)) < tol):
+            if not torch.all(torch.abs(norms - np.sqrt(1/self.curvature)) < tol):
                 raise ValueError(
-                    f"Sphere mean(s) must have norm ≈ {np.sqrt(1/self.cfg.curvature)}. Got norms: {norms}"
+                    f"Sphere mean(s) must have norm ≈ {np.sqrt(1/self.curvature)}. Got norms: {norms}"
                 )
 
         elif manifold == "euclidean":
