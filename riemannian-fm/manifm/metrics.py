@@ -30,7 +30,7 @@ class ManifoldMetricHandler:
                 "rfm",
             ],
         )
-
+        self.cross_curvature = cfg.get("cross_curvature", False)  # whether to normalize metrics for better cross-curvature comparison
         self.m_type = cfg.get("manifold", "euclidean").lower()
         self.curvature = cfg.get("curvature", 1.0)
         self.origin = cfg.get(
@@ -73,14 +73,28 @@ class ManifoldMetricHandler:
                 torch.as_tensor(self.curvature, device=x.device, dtype=x.dtype)
             )
             origin = torch.zeros(1, x.shape[-1], device=x.device, dtype=x.dtype)
-            origin[:, 0] = radius
+            origin[:, 0] = radius  #should we use freichet mean here instead? or does it not matter as long as it's fixed? should be fine as long as it's fixed.
             return origin
 
         raise ValueError(f"origin not defined for manifold: {self.m_type}")
+    
+    def scaled_dist(self, x, y):
+        if self.m_type == "euclidean":
+            return torch.cdist(x, y, p=2)
 
+        d = self.manifold.dist(x, y)
+
+        if self.kappa != 0:
+            scale = torch.sqrt(torch.tensor(abs(self.kappa), device=d.device, dtype=d.dtype))
+            d = d * scale
+
+        return d
     def radial_values(self, x):
         origin = self.get_origin(x).expand_as(x)
-        return self.manifold.dist(origin, x)
+        if self.cross_curvature:
+            return self.scaled_dist(origin, x)
+        else:
+            return self.manifold.dist(origin, x)
 
     def calculate_sinkhorn_knopp(
         self,
@@ -103,7 +117,8 @@ class ManifoldMetricHandler:
         if blur is None:
             #! Blur should also be normalized across curvatures! Take this into account
             blur = self.cfg.get("sinkhorn_blur", 0.05)
-
+        if self.cross_curvature and self.kappa != 0: #normalizing for better cross-curvature comparison
+            blur = blur * (abs(self.kappa) ** 0.5)
         if self.m_type == "euclidean":
             solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur)
             val = solver(x_gen, x_real)
@@ -113,7 +128,12 @@ class ManifoldMetricHandler:
                 # do an explicit pairwise comparison
                 x_exp = x.unsqueeze(1)  # (N, 1, D)
                 y_exp = y.unsqueeze(0)  # (1, M, D)
-                return self.manifold.dist(x_exp, y_exp) ** p
+                
+                if self.cross_curvature:
+                   d = self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
+                   return d ** p
+                else:
+                   return self.manifold.dist(x_exp, y_exp) ** p
 
             solver = SamplesLoss(loss="sinkhorn", p=p, cost=geodesic_cost, blur=blur)
             val = solver(x_gen, x_real)
@@ -132,7 +152,11 @@ class ManifoldMetricHandler:
 
         x_exp = x.unsqueeze(1)
         y_exp = y.unsqueeze(0)
-        return self.manifold.dist(x_exp, y_exp)
+        
+        if self.cross_curvature:
+            return self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
+        else:
+            return self.manifold.dist(x_exp, y_exp)
 
     def calculate_mmd(self, x_gen, x_real, sigma=None):
         """
@@ -238,7 +262,7 @@ class ManifoldMetricHandler:
             for _ in range(max_iter):
                 v = self.manifold.logmap(mu.expand_as(x), x)
                 step = v.mean(dim=0, keepdim=True)
-                mu = self.manifold.expmap(mu, lr * step)
+                mu = self.manifold.expmap(mu, lr * step) # Assuming it maps from mu to x.
 
                 if hasattr(self.manifold, "projx"):
                     mu = self.manifold.projx(mu)
@@ -251,6 +275,8 @@ class ManifoldMetricHandler:
         mu = self.frechet_mean(samples)
         mu_expanded = mu.expand_as(samples)
         return self.manifold.dist(samples, mu_expanded).pow(2).mean()
+        # not using this as, we would need to normalize logmap, for statistics not needed.
+        #return self.scaled_dist(samples, mu_expanded).pow(2).mean() #normalizing for better cross-curvature comparison  
 
     def calculate_dispersion(self, samples):
         """
@@ -377,7 +403,10 @@ class ManifoldMetricHandler:
         mu_exp = mu.unsqueeze(0)  # Shape: (1, k, d)
 
         # compute the true pairwise hyperbolic distances directly
-        distances = self.manifold.dist(x_exp, mu_exp)  # Shape: (N, k)
+        if self.cross_curvature:
+            distances = self.scaled_dist(x_exp, mu_exp) #normalizing for better cross-curvature comparison
+        else:
+            distances = self.manifold.dist(x_exp, mu_exp)  # Shape: (N, k)
 
         # find the index of the closest mu for each x
         nearest_gaussian = torch.argmin(distances, dim=1)
@@ -467,7 +496,11 @@ class ManifoldMetricHandler:
                 if self.m_type == "euclidean":
                     dist_val = torch.linalg.norm(pred - target, dim=-1).mean()
                 else:
-                    dist_val = self.manifold.dist(pred, target).mean()
+                    if self.cross_curvature:
+                        dist_val = self.scaled_dist(pred, target).mean() #normalizing for better cross-curvature comparison
+                    else:
+                        dist_val = self.manifold.dist(pred, target).mean()
+                    
 
                 results["val_sample/geodesic_dist"] = dist_val
             if self.cfg.get("save_densities", False):
