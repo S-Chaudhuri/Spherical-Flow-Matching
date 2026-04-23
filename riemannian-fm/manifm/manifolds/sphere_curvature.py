@@ -1,4 +1,4 @@
-import geoopt
+import math
 from geoopt.manifolds.base import Manifold
 import numpy as np
 import torch
@@ -26,7 +26,7 @@ class SphereCurvature(Manifold):
     reversible = False
 
     def __init__(
-        self, intersection: torch.Tensor = None, complement: torch.Tensor = None, c: float = 1.0, radius: Optional[float] = None
+        self, intersection: torch.Tensor = None, complement: torch.Tensor = None, c: float = 1.0
     ):
         super().__init__()
         if intersection is not None and complement is not None:
@@ -118,22 +118,24 @@ class SphereCurvature(Manifold):
     # Changed by adding projection on the subspace, and scaling by the radius
     def projx(self, x: torch.Tensor) -> torch.Tensor:
         x = self._project_on_subspace(x) 
-        return x / x.norm(dim=-1, keepdim=True) * self.radius
+        # clamp norm to avoid numerical issues
+        return x / x.norm(dim=-1, keepdim=True).clamp_min(EPS[x.dtype]) * self.radius
 
-    # In the end not changed, TODO: is this correct? Should we also scale by the radius?
+    # We scale by radius since tangent space is defined relative to point with norm R
     def proju(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
-        u = u - (x * u).sum(dim=-1, keepdim=True) * x/(self.radius ** 2)
-        # u = u - (x * u).sum(dim=-1, keepdim=True) * x
+        # proj_x(u) = u - <x, u> / R^2 * x
+        u = u - (x * u).sum(dim=-1, keepdim=True) / (self.radius ** 2) * x 
         return self._project_on_subspace(u)
 
-    # Changed by adding scaling by the radius, and using the curvature in the trigonometric functions, TODO: check if this is correct
+    # Changed by adding scaling by the radius, and using the curvature in the trigonometric functions
     def expmap(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         norm_u = u.norm(dim=-1, keepdim=True)
-        theta = norm_u / self.radius #angle = arc length / radius
-        # exp = x * torch.cos(norm_u) + u * torch.sin(norm_u) / norm_u
-        # exp = x * torch.cos(theta) + u * torch.sin(theta) * (self.radius / norm_u)
-        # Intrinsic Expmap for Sphere
-        exp = x * torch.cos(theta) + u * (self.radius * torch.sin(theta) / norm_u.clamp_min(EPS[u.dtype]))
+        # on a sphere, the geodesic angle is arc length / radius
+        theta = norm_u / self.radius
+        # exp = x * torch.cos(norm_u) + u * torch.sin(norm_u) / norm_u (with clamping to avoid numerical issues)
+        exp = x * torch.cos(theta) + u * torch.sin(theta) * (
+            self.radius / norm_u.clamp_min(EPS[u.dtype])
+        )
         retr = self.projx(x + u)
         cond = norm_u > EPS[u.dtype]
         return torch.where(cond, exp, retr)
@@ -178,7 +180,10 @@ class SphereCurvature(Manifold):
         return torch.acos(inner) * self.radius
 
     def cdist(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        inner = ((self.pairwise_inner(x, y))/(self.radius **2)).clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
+        # first divide, then clamp to set to range [-R^2, R^2], 
+        inner = self.pairwise_inner(x, y) / (self.radius ** 2)
+        inner = inner.clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
+        # scale by radius since the distance is defined relative to points with norm R
         return torch.acos(inner) * self.radius
 
     egrad2rgrad = proju
@@ -244,12 +249,29 @@ class SphereCurvature(Manifold):
 
     random = random_uniform
 
-    # TODO: check if this is correct. 
+    # mass can wrap around the sphere when std is large
     def wrapped_normal(self, dim, mean, std):
-        """
-        Sample from the wrapped normal distribution on the sphere.
-        """
         z = torch.randn_like(mean)
         z = self.proju(mean, z)
         z = std * z
+        z = self.proju(mean, z)
         return self.expmap(mean, z)
+    
+    def transp(self, x, y, v):
+        denom = 1 + self.inner(x, x, y, keepdim=True)
+        res = v - self.inner(x, y, v, keepdim=True) / denom * (x + y)
+        cond = denom.gt(1e-3)
+        return torch.where(cond, res, -v)
+
+    def uniform_logprob(self, x):
+        dim = x.shape[-1]
+        return torch.full_like(
+            x[..., 0],
+            math.lgamma(dim / 2) - (math.log(2) + (dim / 2) * math.log(math.pi)),
+        )
+
+    #def random_base(self, *args, **kwargs):
+    #    return self.random_uniform(*args, **kwargs)
+
+    def base_logprob(self, *args, **kwargs):
+        return self.uniform_logprob(*args, **kwargs)

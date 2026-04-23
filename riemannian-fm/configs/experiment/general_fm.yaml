@@ -1,3 +1,4 @@
+# @package _global_
 data: general_fm
 use_wandb: True
 
@@ -5,13 +6,14 @@ general:
   manifold: poincare
   curvature: 1.0
   dim: 3
-  x0_dist: uniform
-  x1_dist: normal
+  x0_dist: gaussian
+  x1_dist: gaussian
   n_samples: 20000
   std_x0: 0.7
   std_x1: 0.7
   mean_x0: [0.0, 0.0, 0.0]
-  mean_x1: [0.0, 0.0, 0.0]
+  mean_x1: [0.8, 0.0, 0.0]
+  weights: None # for mixture of gaussians, define as list: [0.5, 0.5]
 
 model:
   d_model: 512
@@ -34,3 +36,6 @@ eval_projx: False
 local_coords: False
 normalize_loglik: False
 visualize: True
+
+eval_n_pairs: 100 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same 100 pairs
+eval_t_values: [0.0, 0.25, 0.5, 0.75, 1.0]
