@@ -1,0 +1,25 @@
+# Baseline experiment sweep: geometry × dimensionality × curvature.
+# Shared Single Gaussian setup (std=0.5, mean=[0, 0.5]), varying:
+#   manifold  : euclidean, poincare, sphere
+#   dim       : 2, 3
+#   curvature : 1, 2, 3  (curved manifolds only)
+# 14 configs. Naming: <manifold>_d<dim>_c<curvature>, e.g. poi_d2_c2.
+
+# Euclidean
+euc_d2: {manifold: euclidean, dim: 2, curvature: 0.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.8], mean_x1: [0.0, 0.5]}
+euc_d3: {manifold: euclidean, dim: 3, curvature: 0.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.8, 0.0], mean_x1: [0.0, 0.5, 0.0]}
+
+# Poincaré
+poi_d2_c1: { manifold: poincare, dim: 2, curvature: 1.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0], mean_x1: [0.0, 0.8] }
+poi_d2_c2: { manifold: poincare, dim: 2, curvature: 2.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0], mean_x1: [0.0, 0.8] }
+poi_d2_c3: { manifold: poincare, dim: 2, curvature: 3.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0], mean_x1: [0.0, 0.8] }
+poi_d3_c1: { manifold: poincare, dim: 3, curvature: 1.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0, 0.0], mean_x1: [0.0, 0.8, 0.0] }
+poi_d3_c2: { manifold: poincare, dim: 3, curvature: 2.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0, 0.0], mean_x1: [0.0, 0.8, 0.0] }
+
+# Sphere
+sph_d2_c1: { manifold: sphere, dim: 2, curvature: 1.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0], mean_x1: [0.0, 0.8] }
+sph_d2_c2: { manifold: sphere, dim: 2, curvature: 2.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0], mean_x1: [0.0, 0.8] }
+sph_d2_c3: { manifold: sphere, dim: 2, curvature: 3.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0], mean_x1: [0.0, 0.8] }
+sph_d3_c1: { manifold: sphere, dim: 3, curvature: 1.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0, 0.0], mean_x1: [0.0, 0.8, 0.0] }
+sph_d3_c2: { manifold: sphere, dim: 3, curvature: 2.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0, 0.0], mean_x1: [0.0, 0.8, 0.0] }
+sph_d3_c3: { manifold: sphere, dim: 3, curvature: 3.0, std_x0: 0.5, std_x1: 0.5, mean_x0: [0.0, 0.0, 0.0], mean_x1: [0.0, 0.8, 0.0] }
