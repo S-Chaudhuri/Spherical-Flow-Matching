@@ -78,12 +78,10 @@ class SphereCurvature(Manifold):
         self, x: torch.Tensor, *, atol=1e-5, rtol=1e-5
     ) -> Tuple[bool, Optional[str]]:
         norm = x.norm(dim=-1)
-        ok = torch.allclose(
-            norm,
-            torch.full_like(norm, self.radius),
-            atol=atol,
-            rtol=rtol,
-        )
+        # checking based on radius
+        target = norm.new((1,)).fill_(self.radius)
+        ok = torch.allclose(norm, target,atol=atol, rtol=rtol)
+        # ok = torch.allclose(norm, norm.new((1,)).fill_(1), atol=atol, rtol=rtol)
         if not ok:
             return False, "`norm(x) != {}` with atol={}, rtol={}".format(self.radius, atol, rtol)
         ok = torch.allclose(self._project_on_subspace(x), x, atol=atol, rtol=rtol)
@@ -139,7 +137,7 @@ class SphereCurvature(Manifold):
             self.radius / norm_u.clamp_min(EPS[u.dtype])
         )
         retr = self.projx(x + u)
-        cond = norm_u > EPS[norm_u.dtype]
+        cond = norm_u > EPS[u.dtype]
         return torch.where(cond, exp, retr)
 
     def retr(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
@@ -148,21 +146,37 @@ class SphereCurvature(Manifold):
     def transp(self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         return self.proju(y, v)
 
-    def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        u = self.proju(x, y - x)
-        dist = self.dist(x, y, keepdim=True)
-        cond = dist.gt(EPS[x.dtype])
-        result = torch.where(
-            cond, u * dist / u.norm(dim=-1, keepdim=True).clamp_min(EPS[x.dtype]), u
-        )
-        return result
+    # def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    #     u = self.proju(x, y - x)
+    #     dist = self.dist(x, y, keepdim=True)
+    #     cond = dist.gt(EPS[x.dtype])
+    #     result = torch.where(
+    #         cond, u * dist / u.norm(dim=-1, keepdim=True).clamp_min(EPS[x.dtype]), u
+    #     )
+    #     return result
 
+    def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        cos_theta = (x * y).sum(dim=-1, keepdim=True) / (self.radius ** 2)
+        cos_theta = cos_theta.clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
+        theta = torch.acos(cos_theta)
+        sin_theta = torch.sin(theta)
+
+        # direction = self.proju(x, y - cos_theta * x)
+        direction = y - cos_theta * x
+        coef = (self.radius *theta) / sin_theta.clamp_min(EPS[x.dtype])
+        result =  direction * coef
+        # handle x close to y (since north pole origin)
+        small = theta < EPS[x.dtype]
+        fallback = self.proju(x, y - x)
+        return torch.where(small, fallback, result)
+    
     def dist(self, x: torch.Tensor, y: torch.Tensor, *, keepdim=False) -> torch.Tensor:
-        inner = self.inner(x, x, y, keepdim=keepdim) / self.radius ** 2
+        inner = self.inner(x, x, y, keepdim=keepdim) / (self.radius ** 2)
         inner = inner.clamp(
             -1 + EPS[x.dtype], 1 - EPS[x.dtype]
         )
-
+        #tighter clamp as origin is fixed (floating point errors) optional
+        # inner = inner.clamp(-1 + 1e-7, 1 - 1e-7)
         return torch.acos(inner) * self.radius
 
     def cdist(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
