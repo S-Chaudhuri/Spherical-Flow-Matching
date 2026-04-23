@@ -1,3 +1,34 @@
+## Installation
+
+### Linux / macOS
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Windows
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Smoke test
+
+Run a minimal CPU training job to verify that the environment, dependencies, and CodeCarbon setup work correctly:
+
+```bash
+python riemannian-fm/train.py accelerator=cpu devices=1 use_wandb=false optim.num_iterations=1 val_every=1
+```
+
+
+# Below is the old README. Add new stuff above this line!
+
 # Hyperbolic Latent Flow Matching
 
 ![Model architecture](HFM.drawio.png)

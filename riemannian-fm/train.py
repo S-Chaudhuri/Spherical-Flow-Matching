@@ -20,6 +20,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks import LearningRateMonitor
 
+from codecarbon import EmissionsTracker # carbon tracking using CodeCarbon
+
 from manifm.datasets import get_loaders
 from manifm.model_pl import ManifoldFMLitModule
 
@@ -27,6 +29,16 @@ from manifm.model_pl import ManifoldFMLitModule
 
 torch.backends.cudnn.benchmark = True
 log = logging.getLogger(__name__)
+
+
+def make_emissions_tracker():           # helper function for carbon tracking initialization
+    return EmissionsTracker(
+        project_name = "geometry-and-RFM",
+        output_dir = ".",
+        output_file = "emissions.csv",
+        save_to_file = True,
+        log_level = "error",
+    )
 
 
 @hydra.main(version_base=None, config_path="configs", config_name="train")
@@ -132,8 +144,10 @@ def main(cfg: DictConfig):
         )
     trainer = pl.Trainer(
         max_steps=cfg.optim.num_iterations,
-        accelerator="gpu",
-        devices=1,
+                                        # also allow to run on cpu
+        accelerator = cfg.get("accelerator", "gpu" if torch.cuda.is_available() else "cpu"),
+                                        # allow number of devices to be set through the config
+        devices = cfg.get("devices", 1),
         logger=loggers,
         val_check_interval=cfg.val_every,
         check_val_every_n_epoch=None,
@@ -154,8 +168,14 @@ def main(cfg: DictConfig):
         # Use the checkpoint with the latest modification time
         checkpoint = sorted(checkpoints, key=os.path.getmtime)[-1]
 
-    trainer.fit(model, train_loader, val_loader, ckpt_path=checkpoint)
-
+    tracker = make_emissions_tracker()  # init carbon tracking using make_emissions_tracker() helper function
+    tracker.start()                     # start carbon tracking
+                                        # source: https://wandb.ai/amanarora/codecarbon/reports/Tracking-CO2-Emissions-of-
+                                        # Your-Deep-Learning-Models-with-CodeCarbon-and-Weights-Biases--VmlldzoxMzM1NDg3
+    try:
+        trainer.fit(model, train_loader, val_loader, ckpt_path = checkpoint)
+    finally:                            # also save in case training fails
+        train_emissions_kg = tracker.stop()
     train_metrics = trainer.callback_metrics
 
     log.info("Starting testing!")
@@ -172,10 +192,15 @@ def main(cfg: DictConfig):
     metric_dict = {**train_metrics, **test_metrics}
 
     for k, v in metric_dict.items():
-        metric_dict[k] = float(v)
+        if torch.is_tensor(v):          # type check for tensors and detach if so
+            metric_dict[k] = v.detach().cpu().item()
+        else:
+            metric_dict[k] = float(v)
+                                        # also add total CO2kq equivalent to the metric dict
+    metric_dict["train/codecarbon_kg_co2"] = float(train_emissions_kg)
 
     with open("metrics.json", "w") as fout:
-        print(json.dumps(metric_dict), file=fout)
+        print(json.dumps(metric_dict), file = fout)
 
     return metric_dict
 
