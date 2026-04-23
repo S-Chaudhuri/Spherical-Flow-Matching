@@ -16,6 +16,10 @@ from torchmetrics import MeanMetric, MinMetric
 import pytorch_lightning as pl
 from torch.func import vjp, jvp, vmap, jacrev
 from torchdiffeq import odeint
+try:
+    import wandb  # type: ignore
+except Exception:
+    wandb = None
 
 from manifm.datasets import get_manifold
 from manifm.ema import EMA
@@ -87,6 +91,10 @@ class ManifoldFMLitModule(pl.LightningModule):
         # for logging best so far validation accuracy
         self.val_metric_best = MinMetric()
 
+        # paths for saved evaluation artifacts (relative to Hydra run dir/cwd).
+        self._fixed_eval_path = os.path.join("artifacts", "general_dataset_fixed_eval.pt")
+        self._final_eval_path = os.path.join("artifacts", "final_fixed_eval_outputs.pt")
+
     @property
     def vecfield(self):
         return self.model
@@ -95,6 +103,183 @@ class ManifoldFMLitModule(pl.LightningModule):
     def device(self):
         return self.model.parameters().__next__().device
 
+    # helper function to get the current wandb run, if it exists
+    def _wandb_run(self):
+        if wandb is None or getattr(self, "trainer", None) is None:
+            return None
+        for lg in getattr(self.trainer, "loggers", []) or []:
+            if lg.__class__.__name__ == "WandbLogger":
+                return lg.experiment
+        return None
+
+    # helper function for logging tensors to wandb
+    def _wandb_log_pt(self, name: str, payload: dict):
+        run = self._wandb_run()
+        if run is None:
+            return
+        os.makedirs("debug", exist_ok=True)
+        path = os.path.join("debug", f"{name}-step{self.global_step:07d}.pt")
+        torch.save(payload, path)
+        art = wandb.Artifact(name=f"{name}-step{self.global_step:07d}", type="debug")
+        art.add_file(path)
+        run.log_artifact(art)
+
+    def _wandb_log_file(self, name: str, path: str, type_name: str = "data"):
+        run = self._wandb_run()
+        if run is None or wandb is None:
+            return
+        art = wandb.Artifact(name=name, type=type_name)
+        art.add_file(path)
+        run.log_artifact(art)
+
+    def on_fit_start(self) -> None:
+        # save-once items at the beginning are produced by GeneralDataset and written to
+        # artifacts/general_dataset_fixed_eval.pt. If present, upload it as a W&B artifact.
+        if getattr(self, "trainer", None) is None or not self.trainer.is_global_zero:
+            return
+        if os.path.exists(self._fixed_eval_path):
+            self._wandb_log_file("fixed_eval_inputs", self._fixed_eval_path, type_name="fixed_eval")
+
+    @torch.no_grad()
+    def on_fit_end(self) -> None:
+        # only run once on the main process in distributed training.
+        if getattr(self, "trainer", None) is None or not self.trainer.is_global_zero:
+            return
+
+        # if there is no fixed-eval input file, there is nothing to compute.
+        if not os.path.exists(self._fixed_eval_path):
+            return
+
+        os.makedirs(os.path.dirname(self._final_eval_path), exist_ok=True)
+
+        # load the fixed evaluation inputs saved by GeneralDataset.
+        fixed = torch.load(self._fixed_eval_path, map_location="cpu")
+        eval_x0 = fixed.get("eval_x0")
+        eval_x1 = fixed.get("eval_x1")
+        eval_t = fixed.get("eval_t")
+
+        # basic sanity check.
+        if eval_x0 is None or eval_x1 is None or eval_t is None:
+            return
+
+        # move fixed eval data to the model device.
+        eval_x0 = eval_x0.to(self.device)
+        eval_x1 = eval_x1.to(self.device)
+        eval_t = eval_t.to(self.device)
+
+        # this fixed-eval saving path is currently implemented for simple manifolds.
+        # mesh uses solve_path settings and would need a separate implementation.
+        if isinstance(self.manifold, Mesh):
+            return
+
+        # we will collect one tensor per saved time value, then stack over time.
+        xt_list = []
+        ut_list = []
+        vtheta_list = []
+        t_list = []
+
+        # flatten eval_t in case it is stored as [T] or [T, 1].
+        eval_t_flat = eval_t.flatten()
+
+        for t_scalar in eval_t_flat.tolist():
+            t_scalar = float(t_scalar)
+
+            # build a batch-sized time tensor for this single probe time.
+            if isinstance(self.manifold, SPD):
+                # SPD geodesic API expects shape [N]
+                t_batch = torch.full(
+                    (eval_x0.shape[0],),
+                    t_scalar,
+                    device=self.device,
+                    dtype=eval_x0.dtype,
+                )
+
+                # x_t = geodesic(x0, x1; t)
+                # u_t = d/dt geodesic(x0, x1; t)
+                def spd_geodesic(t_in):
+                    return self.manifold.geodesic(eval_x0, eval_x1, t_in)
+
+                x_t, u_t = jvp(
+                    spd_geodesic,
+                    (t_batch,),
+                    (torch.ones_like(t_batch),),
+                )
+
+            else:
+                # for sphere / poincare / euclidean, we use the geodesic path
+                # x_t = expmap(x0, t * logmap(x0, x1))
+                # u_t = d/dt x_t
+                t_batch = torch.full(
+                    (eval_x0.shape[0], 1),
+                    t_scalar,
+                    device=self.device,
+                    dtype=eval_x0.dtype,
+                )
+
+                shooting_tangent_vec = self.manifold.logmap(eval_x0, eval_x1)
+
+                def path(t_in):
+                    return self.manifold.expmap(eval_x0, t_in * shooting_tangent_vec)
+
+                x_t, u_t = jvp(
+                    path,
+                    (t_batch,),
+                    (torch.ones_like(t_batch),),
+                )
+
+            # ensure shape [N, D]
+            x_t = x_t.reshape(eval_x0.shape[0], self.dim)
+            u_t = u_t.reshape(eval_x0.shape[0], self.dim)
+
+            # evaluate the final learned vector field on the same (t, x_t) tuples.
+            vtheta = self.vecfield(t_batch, x_t).reshape(eval_x0.shape[0], self.dim)
+
+            xt_list.append(x_t.detach().cpu())
+            ut_list.append(u_t.detach().cpu())
+            vtheta_list.append(vtheta.detach().cpu())
+            t_list.append(torch.tensor(t_scalar, dtype=torch.float32))
+
+        # stack over time dimension.
+        x_t_all = torch.stack(xt_list, dim=0)        # [T, N, D]
+        u_t_all = torch.stack(ut_list, dim=0)        # [T, N, D]
+        vtheta_all = torch.stack(vtheta_list, dim=0) # [T, N, D]
+        eval_t_out = torch.stack(t_list, dim=0)      # [T]
+
+        # this produces one final sample per saved start point.
+        x1_hat = self.sample(
+            eval_x0.shape[0],
+            device=self.device,
+            x0=eval_x0,
+        ).detach().cpu()
+
+        payload = {
+            "meta": {
+                "global_step": int(getattr(self, "global_step", 0)),
+                "eval_n_pairs": int(eval_x0.shape[0]),
+                "n_t": int(eval_t_out.shape[0]),
+                "dim": int(self.dim),
+                "manifold_type": self.manifold.__class__.__name__,
+            },
+            # fixed evaluation inputs
+            "eval_x0": fixed.get("eval_x0"),   
+            "eval_x1": fixed.get("eval_x1"),
+            "eval_t": eval_t_out,           
+            # final evaluation outputs
+            "x_t": x_t_all,
+            "u_t": u_t_all,
+            "vtheta": vtheta_all,
+            "x1_hat": x1_hat,
+        }
+
+        torch.save(payload, self._final_eval_path)
+
+        # upload to W&B
+        self._wandb_log_file(
+            "final_fixed_eval_outputs",
+            self._final_eval_path,
+            type_name="fixed_eval",
+        )
+    
     @torch.no_grad()
     def visualize(self, batch, force=False):
         if not force and not self.cfg.get("visualize", False):
@@ -646,13 +831,10 @@ class ManifoldFMLitModule(pl.LightningModule):
             print(f"Skipping iteration because loss is {loss.item()}.")
             return None
 
-        # we can return here dict with any tensors
-        # and then read it in some callback or in `training_epoch_end()` below
-        # remember to always return loss from `training_step()` or else backpropagation will fail!
         return {"loss": loss}
 
-    def training_epoch_end(self, outputs: List[Any]):
-        # `outputs` is a list of dicts returned from `training_step()`
+    # def training_epoch_end(self, outputs):
+    def on_train_epoch_end(self):
         self.train_metric.reset()
 
     def validation_step(self, batch: Any, batch_idx: int):
@@ -665,23 +847,53 @@ class ManifoldFMLitModule(pl.LightningModule):
         loss = -logprob.mean()
         batch_size = x1.shape[0]
 
-        self.log("val/loss", loss, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        # log the RFM loss on validation batches
+        with torch.no_grad():
+            rfm_loss = self.rfm_loss_fn(batch)
+        self.log(
+            "val/rfm_loss",
+            rfm_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=False,
+            batch_size=batch_size,
+        )
+
+        self.log(
+            "val/loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            batch_size=batch_size,
+        )
         self.val_metric.update(-logprob)
 
         if batch_idx == 0:
             self.visualize(batch)
+            
+            # log model samples 
+            run = self._wandb_run()
+            if run is not None:
+                n = 256
+                if isinstance(batch, dict) and "x0" in batch:
+                    x0 = batch["x0"][:n]
+                    x1_hat = self.sample(x0.shape[0], device=x0.device, x0=x0)
+                    self._wandb_log_pt("val_x1_hat", {"x0": x0.detach().cpu(), "x1_hat": x1_hat.detach().cpu()})
+                else:
+                    x1_hat = self.sample(n, device=self.device)
+                    self._wandb_log_pt("val_x1_hat", {"x1_hat": x1_hat.detach().cpu()})
 
+            # log integration grid used for trajectories
+            t_grid = torch.linspace(0, 1, 1001)
+            self._wandb_log_pt("eval_t_grid", {"t_grid": t_grid})   
         return {"loss": loss}
 
-    def validation_epoch_end(self, outputs: List[Any]):
-        val_loss = self.val_metric.compute()  # get val accuracy from current epoch
+    # def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
+        val_loss = self.val_metric.compute()
         self.val_metric_best.update(val_loss)
-        self.log(
-            "val/loss_best",
-            self.val_metric_best.compute(),
-            on_epoch=True,
-            prog_bar=True,
-        )
+        self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
         self.val_metric.reset()
 
     def test_step(self, batch: Any, batch_idx: int):
@@ -696,7 +908,8 @@ class ManifoldFMLitModule(pl.LightningModule):
         self.test_metric.update(-logprob)
         return {"loss": loss}
 
-    def test_epoch_end(self, outputs: List[Any]):
+    # def test_epoch_end(self):
+    def on_test_epoch_end(self):
         self.test_metric.reset()
 
     def configure_optimizers(self):

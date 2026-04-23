@@ -36,7 +36,8 @@ def main(cfg: DictConfig):
     logging.getLogger("pytorch_lightning").setLevel(logging.getLevelName("INFO"))
 
     if cfg.get("seed", None) is not None:
-        pl.utilities.seed.seed_everything(cfg.seed)
+        #pl.utilities.seed.seed_everything(cfg.seed)
+        pl.seed_everything(cfg.seed)
 
     print(cfg)
 
@@ -80,7 +81,39 @@ def main(cfg: DictConfig):
         LearningRateMonitor(),
     ]
 
-    slurm_plugin = pl.plugins.environments.SLURMEnvironment(auto_requeue=False)
+    # slurm_plugin = pl.plugins.environments.SLURMEnvironment(auto_requeue=False)
+    _SLURMEnvironment = None
+    try:
+        from pytorch_lightning.plugins.environments import SLURMEnvironment as _SLURMEnvironment  # type: ignore
+    except Exception:
+        try:
+            from lightning_fabric.plugins.environments import SLURMEnvironment as _SLURMEnvironment  # type: ignore
+        except Exception:
+            _SLURMEnvironment = None
+
+    slurm_plugin = None
+    if _SLURMEnvironment is not None:
+        try:
+            slurm_plugin = _SLURMEnvironment(auto_requeue=False)
+        except TypeError:
+            slurm_plugin = _SLURMEnvironment()
+
+    def _slurm_detect() -> bool:
+        if slurm_plugin is None:
+            return False
+        detect = getattr(slurm_plugin, "detect", None)
+        if callable(detect):
+            try:
+                return bool(detect())
+            except Exception:
+                pass
+        detect_cls = getattr(_SLURMEnvironment, "detect", None)
+        if callable(detect_cls):
+            try:
+                return bool(detect_cls())
+            except Exception:
+                pass
+        return "SLURM_JOB_ID" in os.environ
 
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     cfg_dict["cwd"] = os.getcwd()
@@ -92,7 +125,7 @@ def main(cfg: DictConfig):
                 save_dir=".",
                 name=f"{cfg.data}_{now}",
                 project="ManiFM",
-                log_model=False,
+                log_model=True,
                 config=cfg_dict,
                 resume=True,
             )
@@ -107,7 +140,7 @@ def main(cfg: DictConfig):
         callbacks=callbacks,
         precision=cfg.get("precision", 32),
         gradient_clip_val=cfg.optim.grad_clip,
-        plugins=slurm_plugin if slurm_plugin.detect() else None,
+        plugins=slurm_plugin if _slurm_detect() else None,
         num_sanity_val_steps=0,
     )
 
