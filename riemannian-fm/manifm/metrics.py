@@ -252,31 +252,76 @@ class ManifoldMetricHandler:
         inner = self.manifold.inner(x, v, v)
         return torch.sqrt(torch.clamp(inner, min=1e-12))
 
-    def frechet_mean(self, x, max_iter=50, lr=0.1):
+
+    def frechet_objective(self, mu, x):
+        """ Helper function: return average squared geodesic distance """
+        mu_expanded = mu.expand_as(x)
+        return self.manifold.dist(mu_expanded, x).pow(2).mean()
+
+
+    def frechet_mean(
+            self,
+            x,
+            max_iter = 100,
+            lr = 0.1,
+            tol = 1e-6,
+            n_init = 4,
+        ):
+        """ Approximate the Karcher/Fréchet mean through multiple tries """
         if self.m_type == "euclidean":
-            return x.mean(dim=0, keepdim=True)
+            return x.mean(dim = 0, keepdim = True)
 
-        with torch.no_grad(): 
-            mu = self.get_origin(x).clone()  # start at origin, changed from random sample
+        with torch.no_grad():
+                                        # start with the origin
+            init_points = [self.get_origin(x).clone()]
 
-            for _ in range(max_iter):
-                v = self.manifold.logmap(mu.expand_as(x), x)
-                step = v.mean(dim=0, keepdim=True)
-                mu = self.manifold.expmap(mu, lr * step) # Assuming it maps from mu to x.
+            medoid_idx = self.pairwise_dist(x, x).mean(dim = 1).argmin()
+                                        # use medoid (most central sample point)
+            init_points.append(x[medoid_idx:medoid_idx + 1].clone())
+            if self.m_type == "sphere":
+                rand_idx = torch.randperm(x.shape[0], device = x.device)[
+                    : max(0, n_init - len(init_points))
+                ]
+                for idx in rand_idx:
+                                        # try more initialisations
+                    init_points.append(x[idx : idx + 1].clone())
 
-                if hasattr(self.manifold, "projx"):
-                    mu = self.manifold.projx(mu)
-        return mu
+            best_mu = None
+            best_obj = None
+
+            for mu0 in init_points:
+                mu = mu0
+
+                for _ in range(max_iter):
+                    v = self.manifold.logmap(mu.expand_as(x), x)
+                                        # average log-step
+                    step = v.mean(dim = 0, keepdim = True)
+
+                    if self._norm(step, mu).item() < tol:
+                        break           # now stop at convergence
+
+                    mu = self.manifold.expmap(mu, lr * step)
+
+                    if hasattr(self.manifold, "projx"):
+                                        # project back to manifold
+                        mu = self.manifold.projx(mu)   
+
+                obj = self.frechet_objective(mu, x)
+
+                if best_obj is None or obj < best_obj:
+                    best_obj = obj      # save the best minimum                          
+                    best_mu = mu.clone()
+
+        return best_mu
+
 
     def calculate_frechet_variance(self, samples):
-        """
-        Calculate Frechet variance using Frechet mean
-        """
+        """ Fréchet variance around the found mean """
         mu = self.frechet_mean(samples)
-        mu_expanded = mu.expand_as(samples)
-        return self.manifold.dist(samples, mu_expanded).pow(2).mean()
+        return self.frechet_objective(mu, samples)                     
         # not using this as, we would need to normalize logmap, for statistics not needed.
         #return self.scaled_dist(samples, mu_expanded).pow(2).mean() #normalizing for better cross-curvature comparison  
+
 
     def calculate_dispersion(self, samples):
         """
