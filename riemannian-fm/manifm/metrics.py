@@ -157,6 +157,45 @@ class ManifoldMetricHandler:
             return self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
         else:
             return self.manifold.dist(x_exp, y_exp)
+        
+    def calculate_rw2_angle(self, x_gen, x_real, eps=1e-8):
+        """
+        RW2 angle between 2 empirical distributions.
+        Vaild for any curvature within each manifold geometry,(dosen't work for cross manifold comparison)
+        as the wasserstein geometry differs accross manifolds. (also the wasserstein geometry is not well defined across curvatures, as the cost function differs, so we can't do cross-curvature comparison with this metric, but it can be used within each curvature to get a more fine-grained measure of distributional alignment than the Sinkhorn-Knopp distance alone)
+        """
+        origin_gen = self.get_origin(x_gen).expand_as(x_gen)
+        origin_real = self.get_origin(x_real).expand_as(x_real)
+
+        # a = ||mu||, b = ||nu||, c = distance(mu, nu)
+        a = self.calculate_sinkhorn_knopp(x_gen, origin_gen)
+        b = self.calculate_sinkhorn_knopp(x_real, origin_real)
+        c = self.calculate_sinkhorn_knopp(x_gen, x_real)
+        
+        # fallback for collapsed distributions
+        a_safe = torch.clamp(a, min=eps)
+        b_safe = torch.clamp(b, min=eps)
+
+        cos_theta = (a_safe**2 + b_safe**2 - c**2) / (2.0 * a_safe * b_safe)
+        cos_theta = torch.clamp(cos_theta, -1.0, 1.0)
+
+        theta = torch.acos(cos_theta)
+
+        sin_theta = torch.sqrt(torch.clamp(1.0 - cos_theta**2, min=0.0))
+        proj_dist = a_safe * sin_theta
+
+        proj_ratio = proj_dist / a_safe  # = sin(theta)
+
+        return {
+        "val_sample/rw2_angle": theta,              # radians
+        "val_sample/rw2_cosine": cos_theta,         # alignment
+        "val_sample/rw2_norm_gen": a,               # ||mu||
+        "val_sample/rw2_norm_real": b,              # ||nu||
+        "val_sample/rw2_distance": c,               # W(mu, nu)
+        "val_sample/rw2_proj_dist": proj_dist,      # orthogonal mismatch
+        "val_sample/rw2_proj_ratio": proj_ratio,    # scale-free (makes it independent of curvature and other dimensions)
+    }
+
 
     def calculate_mmd(self, x_gen, x_real, sigma=None):
         """
