@@ -49,6 +49,7 @@ class ManifoldMetricHandler:
         else:
             raise ValueError(f"unsupported manifold: {self.m_type}")
 
+
     def get_origin(self, x):
         """
         Return the fixed reference origin used for radial metrics:
@@ -78,6 +79,7 @@ class ManifoldMetricHandler:
 
         raise ValueError(f"origin not defined for manifold: {self.m_type}")
     
+
     def scaled_dist(self, x, y):
         if self.m_type == "euclidean":
             return torch.cdist(x, y, p=2)
@@ -89,12 +91,15 @@ class ManifoldMetricHandler:
             d = d * scale
 
         return d
+    
+
     def radial_values(self, x):
         origin = self.get_origin(x).expand_as(x)
         if self.cross_curvature:
             return self.scaled_dist(origin, x)
         else:
             return self.manifold.dist(origin, x)
+
 
     def calculate_sinkhorn_divergence(
         self,
@@ -152,6 +157,7 @@ class ManifoldMetricHandler:
 
     #! Add decomposed Sinkhorn Knopp for radial and angular
 
+
     def pairwise_dist(self, x, y):
         if self.m_type == "euclidean":
             return torch.cdist(x, y, p=2)
@@ -163,6 +169,7 @@ class ManifoldMetricHandler:
             return self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
         else:
             return self.manifold.dist(x_exp, y_exp)
+
 
     def calculate_mmd(self, x_gen, x_real, sigma=None):
         """
@@ -190,6 +197,7 @@ class ManifoldMetricHandler:
         # return MMD statistic
         return kxx.mean() + kyy.mean() - 2 * kxy.mean()
 
+
     def calculate_epsilon_coverage(
         self,
         x_gen,
@@ -214,6 +222,7 @@ class ManifoldMetricHandler:
 
         nearest = d.min(dim=1).values
         return (nearest <= eps).float().mean()
+
 
     def calculate_epsilon_precision(
         self,
@@ -240,12 +249,14 @@ class ManifoldMetricHandler:
         nearest = d.min(dim=1).values
         return (nearest <= eps).float().mean()
 
+
     # def _norm(self, v, x):
     #     if self.m_type != "euclidean":
     #         norm = torch.sqrt(self.manifold.inner(x, v, v).clamp(min = 1e-12))
     #     else:
     #         norm = torch.linalg.norm(v, dim = -1)
     #     return norm
+
 
     def _norm(self, v, x):
         """
@@ -274,6 +285,7 @@ class ManifoldMetricHandler:
                     mu = self.manifold.projx(mu)
         return mu
 
+
     def calculate_frechet_variance(self, samples):
         """
         Calculate Frechet variance using Frechet mean
@@ -284,6 +296,7 @@ class ManifoldMetricHandler:
         # not using this as, we would need to normalize logmap, for statistics not needed.
         #return self.scaled_dist(samples, mu_expanded).pow(2).mean() #normalizing for better cross-curvature comparison  
 
+
     def calculate_dispersion(self, samples):
         """
         Pairwise dispersion calculation: simpler version of Frechet variance
@@ -293,6 +306,7 @@ class ManifoldMetricHandler:
         mask = ~torch.eye(n, dtype=torch.bool, device=samples.device)
         return d[mask].mean()
 
+
     def calculate_dispersion_ratio(self, x_pred, x_target):
         """
         Diversity: Calculate dispersion ratio of predicted with target dispersion
@@ -300,6 +314,7 @@ class ManifoldMetricHandler:
         gen_disp = self.calculate_dispersion(x_pred)
         real_disp = self.calculate_dispersion(x_target)
         return gen_disp / torch.clamp(real_disp, min=1e-8)
+
 
     def calculate_vector_norm_stats(self, v, x):
         """
@@ -348,11 +363,13 @@ class ManifoldMetricHandler:
             "relative": zero,
         }
 
+
     def finite_fraction(self, x):
         """
         Stability: Fraction of samples without NaN or inf
         """
         return torch.isfinite(x).all(dim=-1).float().mean()
+
 
     def calculate_rfm_loss(
         self,
@@ -386,6 +403,7 @@ class ManifoldMetricHandler:
             alignment = self.manifold.inner(x_t, v_pred_n, v_target_n).mean()
 
         return loss, alignment
+
 
     def kl_divergence(
         self, x: ManifoldTensor, mu: ManifoldTensor, p: torch.Tensor, eps: float = 1e-8
@@ -433,6 +451,7 @@ class ManifoldMetricHandler:
         )
 
         return kld
+
 
     def calculate_all(self, pred, target, mode="sample", step=0, x_t=None):
         results = {}
@@ -513,6 +532,7 @@ class ManifoldMetricHandler:
                 self.save_density_state(pred, target, step)
 
         return results
+
 
     def save_density_state(
         self,
