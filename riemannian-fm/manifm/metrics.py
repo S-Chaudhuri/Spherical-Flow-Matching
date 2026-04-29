@@ -135,14 +135,19 @@ class ManifoldMetricHandler:
                 else:
                    return self.manifold.dist(x_exp, y_exp) ** p
 
-            solver = SamplesLoss(loss="sinkhorn", p=p, cost=geodesic_cost, blur=blur)
+            solver = SamplesLoss(
+                loss = "sinkhorn",
+                p = p,
+                blur = blur,
+                debias = True, # because we debias, we get the Sinkhorn divergence by Feydy et al., (2019)
+                cost = geodesic_cost,
+            )
             val = solver(x_gen, x_real)
 
         val = torch.clamp(val, min=0.0) ** (1.0 / p)
-        #! TODO: How to normalize Wasserstein/Sinkhorn-Knopp across curvatures?
-        #! Add an if-s with boolean normalize parameter
-        #! Also add it to the calculate_all() function below once chosen
         return val
+        #! TODO: How to normalize Wasserstein/Sinkhorn-Knopp across curvatures?
+        #! Also add it to the calculate_all() function below once chosen
 
     #! Add decomposed Sinkhorn Knopp for radial and angular
 
