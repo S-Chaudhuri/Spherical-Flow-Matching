@@ -96,12 +96,12 @@ class ManifoldMetricHandler:
         else:
             return self.manifold.dist(origin, x)
 
-    def calculate_sinkhorn_knopp(
+    def calculate_sinkhorn_divergence(
         self,
         x_gen,
         x_real,
-        p=1,  # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
-        blur=0.05,
+        p = 1,  # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
+        blur = 0.05,
     ):
         """
         A measure of distributional misalignment: the
@@ -135,7 +135,13 @@ class ManifoldMetricHandler:
                 else:
                    return self.manifold.dist(x_exp, y_exp) ** p
 
-            solver = SamplesLoss(loss="sinkhorn", p=p, cost=geodesic_cost, blur=blur)
+            solver = SamplesLoss(
+                loss = "sinkhorn",
+                p = p,
+                blur = blur,
+                debias = True, # debiasing so we get the Sinkhorn divergence by Feydy et al. (2019)
+                cost = geodesic_cost,
+            )
             val = solver(x_gen, x_real)
 
         val = torch.clamp(val, min=0.0) ** (1.0 / p)
@@ -450,7 +456,7 @@ class ManifoldMetricHandler:
 
         elif mode == "sample":
             if "sinkhorn_knopp" in self.active_metrics:
-                results["val_sample/sinkhorn_knopp"] = self.calculate_sinkhorn_knopp(
+                results["val_sample/sinkhorn_knopp"] = self.calculate_sinkhorn_divergence(
                     pred, target
                 )
 
