@@ -407,6 +407,12 @@ class ManifoldMetricHandler:
         else:
             loss = self.manifold.inner(x_t, diff, diff).mean()
 
+            # ADDED: curvature normalisation.
+            # Vector fields scale with R. Squared error scales with R^2.
+            # Multiply by |K| (which is 1/R^2) to normalize.
+            if self.cross_curvature and self.kappa != 0:
+                loss = loss * abs(self.kappa)
+
         n_pred = self._norm(v_pred, x_t).unsqueeze(-1)
         n_target = self._norm(v_target, x_t).unsqueeze(-1)
 
@@ -415,6 +421,7 @@ class ManifoldMetricHandler:
 
         if self.m_type == "euclidean":
             alignment = (v_pred_n * v_target_n).sum(dim=-1).mean()
+            
         else:
             alignment = self.manifold.inner(x_t, v_pred_n, v_target_n).mean()
 
