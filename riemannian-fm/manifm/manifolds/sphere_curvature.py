@@ -143,8 +143,8 @@ class SphereCurvature(Manifold):
     def retr(self, x: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
         return self.projx(x + u)
 
-    def transp(self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        return self.proju(y, v)
+    # def transp(self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    #     return self.proju(y, v)
 
     def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         u = self.proju(x, y - x)
@@ -258,10 +258,21 @@ class SphereCurvature(Manifold):
         z = std * z
         return self.expmap(mean, z)
     
-    def transp(self, x, y, v):
-        denom = 1 + self.inner(x, x, y, keepdim=True)
-        res = v - self.inner(x, y, v, keepdim=True) / denom * (x + y)
+    # def transp(self, x, y, v):
+    #     denom = 1 + self.inner(x, x, y, keepdim=True)
+    #     res = v - self.inner(x, y, v, keepdim=True) / denom * (x + y)
+    #     cond = denom.gt(1e-3)
+    #     return torch.where(cond, res, -v)
+
+    def transp(self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+        # Parallel transport on a sphere of radius R
+        denom = (self.radius**2) + self.inner(x, x, y, keepdim=True)
+        num = self.inner(x, y, v, keepdim=True)
+        res = v - num / denom.clamp_min(EPS[x.dtype]) * (x + y)
+        
+        # Fallback to -v if the denominator is too small (antipodal points)
         cond = denom.gt(1e-3)
+
         return torch.where(cond, res, -v)
 
     def uniform_logprob(self, x: torch.Tensor) -> torch.Tensor:
