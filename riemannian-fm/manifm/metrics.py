@@ -299,7 +299,16 @@ class ManifoldMetricHandler:
         """
         mu = self.frechet_mean(samples)
         mu_expanded = mu.expand_as(samples)
-        return self.manifold.dist(samples, mu_expanded).pow(2).mean()
+
+        # ADDED: scaled distance here for cross-curvature comparison.
+        # The intrinsic point 'mu' is mathematically valid regardless of logmap scaling.
+        if self.cross_curvature:
+            return self.scaled_dist(samples, mu_expanded).pow(2).mean()
+            
+        else:
+            return self.manifold.dist(samples, mu_expanded).pow(2).mean()
+        
+        # return self.manifold.dist(samples, mu_expanded).pow(2).mean()
         # not using this as, we would need to normalize logmap, for statistics not needed.
         #return self.scaled_dist(samples, mu_expanded).pow(2).mean() #normalizing for better cross-curvature comparison  
 
