@@ -256,7 +256,6 @@ class SphereCurvature(Manifold):
         z = torch.randn_like(mean)
         z = self.proju(mean, z)
         z = std * z
-        z = self.proju(mean, z)
         return self.expmap(mean, z)
     
     def transp(self, x, y, v):
