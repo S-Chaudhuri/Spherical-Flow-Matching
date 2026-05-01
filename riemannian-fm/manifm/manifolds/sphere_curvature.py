@@ -146,29 +146,31 @@ class SphereCurvature(Manifold):
     def transp(self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         return self.proju(y, v)
 
-    # def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    #     u = self.proju(x, y - x)
-    #     dist = self.dist(x, y, keepdim=True)
-    #     cond = dist.gt(EPS[x.dtype])
-    #     result = torch.where(
-    #         cond, u * dist / u.norm(dim=-1, keepdim=True).clamp_min(EPS[x.dtype]), u
-    #     )
-    #     return result
-
     def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        cos_theta = (x * y).sum(dim=-1, keepdim=True) / (self.radius ** 2)
-        cos_theta = cos_theta.clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
-        theta = torch.acos(cos_theta)
-        sin_theta = torch.sin(theta)
+        u = self.proju(x, y - x)
+        dist = self.dist(x, y, keepdim=True)
+        cond = dist.gt(EPS[x.dtype])
+        result = torch.where(
+            cond, u * dist / u.norm(dim=-1, keepdim=True).clamp_min(EPS[x.dtype]), u
+        )
+        return result
 
-        # direction = self.proju(x, y - cos_theta * x)
-        direction = y - cos_theta * x
-        coef = (self.radius *theta) / sin_theta.clamp_min(EPS[x.dtype])
-        result =  direction * coef
-        # handle x close to y (since north pole origin)
-        small = theta < EPS[x.dtype]
-        fallback = self.proju(x, y - x)
-        return torch.where(small, fallback, result)
+    # Original Log map is correct. Radius correction for curvature
+    # is  taken care of by the projx() and proju() methods.
+    # def logmap(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    #     cos_theta = (x * y).sum(dim=-1, keepdim=True) / (self.radius ** 2)
+    #     cos_theta = cos_theta.clamp(-1 + EPS[x.dtype], 1 - EPS[x.dtype])
+    #     theta = torch.acos(cos_theta)
+    #     sin_theta = torch.sin(theta)
+
+    #     # direction = self.proju(x, y - cos_theta * x)
+    #     direction = y - cos_theta * x
+    #     coef = (self.radius *theta) / sin_theta.clamp_min(EPS[x.dtype])
+    #     result =  direction * coef
+    #     # handle x close to y (since north pole origin)
+    #     small = theta < EPS[x.dtype]
+    #     fallback = self.proju(x, y - x)
+    #     return torch.where(small, fallback, result)
     
     def dist(self, x: torch.Tensor, y: torch.Tensor, *, keepdim=False) -> torch.Tensor:
         inner = self.inner(x, x, y, keepdim=keepdim) / (self.radius ** 2)
