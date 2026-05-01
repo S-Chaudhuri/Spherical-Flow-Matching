@@ -119,14 +119,21 @@ class ManifoldMetricHandler:
         blur: entropic regularization parameter for geomloss
         normalize: divide by target dispersion for cross-curvature comparison
         """
+        
         if blur is None:
             #! Blur should also be normalized across curvatures! Take this into account
             blur = self.cfg.get("sinkhorn_blur", 0.05)
-        if self.cross_curvature and self.kappa != 0: #normalizing for better cross-curvature comparison
-            blur = blur * (abs(self.kappa) ** 0.5)
+
+        # REMOVED: blur = blur * (abs(self.kappa) ** 0.5) 
+        # The geodesic_cost already scales the distance, meaning the cost matrix is invariant. 
+        # Scaling blur would result in curvature-dependent entropic regularization.
+        # if self.cross_curvature and self.kappa != 0: #normalizing for better cross-curvature comparison
+        #     blur = blur * (abs(self.kappa) ** 0.5)
+            
         if self.m_type == "euclidean":
             solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur)
             val = solver(x_gen, x_real)
+            
         else:
 
             def geodesic_cost(x, y):
