@@ -265,12 +265,13 @@ class SphereCurvature(Manifold):
         cond = denom.gt(1e-3)
         return torch.where(cond, res, -v)
 
-    def uniform_logprob(self, x):
+    def uniform_logprob(self, x: torch.Tensor) -> torch.Tensor:
         dim = x.shape[-1]
-        return torch.full_like(
-            x[..., 0],
-            math.lgamma(dim / 2) - (math.log(2) + (dim / 2) * math.log(math.pi)),
-        )
+        logprob_unit_sphere = math.lgamma(dim / 2) - (math.log(2) + (dim / 2) * math.log(math.pi))
+        
+        # Account for the radius: Area scales by R^(dim-1)
+        logprob_scaled = logprob_unit_sphere - (dim - 1) * math.log(self.radius)
+        return torch.full_like(x[..., 0], logprob_scaled)
 
     #def random_base(self, *args, **kwargs):
     #    return self.random_uniform(*args, **kwargs)
