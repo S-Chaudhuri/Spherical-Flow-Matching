@@ -1,4 +1,4 @@
-# Hyperbolic Latent Flow Matching
+# TODO: update to our project
 
 ![Model architecture](HFM.drawio.png)
 
