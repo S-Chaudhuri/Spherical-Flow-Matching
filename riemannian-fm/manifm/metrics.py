@@ -15,27 +15,18 @@ class ManifoldMetricHandler:
 
     def __init__(self, cfg):
         self.cfg = cfg  # store configuration dictionary
+        gcfg = cfg.get("general", None)
+        self.gcfg = gcfg
 
         self.active_metrics = cfg.get(  # choose metrics
-            "metrics_to_use",
-            [
-                "sinkhorn_knopp",
-                "mmd",
-                "epsilon_coverage",
-                "epsilon_precision",
-                "frechet_variance",
-                "dispersion",
-                "radial",
-                "stability",
-                "rfm",
-            ],
+            "metrics_used", None
         )
-        self.cross_curvature = cfg.get("cross_curvature", False)  # whether to normalize metrics for better cross-curvature comparison
-        self.m_type = cfg.get("manifold", "euclidean").lower()
-        self.curvature = cfg.get("curvature", 1.0)
-        self.origin = cfg.get(
-            "origin", None
-        )  #! How to define the origin in the first place?
+        self.metrics_params = cfg.get("metrics_param", None)  # parameters for metrics, e.g. blur for Sinkhorn-Knopp
+        self.cross_curvature = self.active_metrics.get("cross_curvature", False)  # whether to normalize metrics for better cross-curvature comparison
+        self.m_type = gcfg.get("manifold", "euclidean").lower()
+        self.curvature = gcfg.get("curvature", 1.0)
+        self.origin = gcfg.get(
+            "origin", None)  #! How to define the origin in the first place?
 
         if self.m_type == "euclidean":
             self.manifold = Euclidean()
@@ -122,7 +113,7 @@ class ManifoldMetricHandler:
         
         if blur is None:
             #! Blur should also be normalized across curvatures! Take this into account
-            blur = self.cfg.get("sinkhorn_blur", 0.05)
+            blur = self.metrics_params.get("sinkhorn_blur", 0.05)
 
         # REMOVED: blur = blur * (abs(self.kappa) ** 0.5) 
         # The geodesic_cost already scales the distance, meaning the cost matrix is invariant. 
@@ -218,7 +209,7 @@ class ManifoldMetricHandler:
         d = self.pairwise_dist(x_real, x_gen)
 
         if eps_multiplier is None:
-            eps_multiplier = self.cfg.get("coverage_eps_multiplier", 1.0)
+            eps_multiplier = self.metrics_params.get("coverage_eps_multiplier", 1.0)
 
         if eps is None:
             d_real = self.pairwise_dist(x_real, x_real)
@@ -244,7 +235,7 @@ class ManifoldMetricHandler:
         d = self.pairwise_dist(x_gen, x_real)
 
         if eps_multiplier is None:
-            eps_multiplier = self.cfg.get("coverage_eps_multiplier", 1.0)
+            eps_multiplier = self.metrics_params.get("coverage_eps_multiplier", 1.0)
 
         if eps is None:
             d_real = self.pairwise_dist(x_real, x_real)
@@ -497,25 +488,24 @@ class ManifoldMetricHandler:
             results["val_vec/tangency_violation_rel"] = tangent_stats["relative"]
 
         elif mode == "sample":
-            if "sinkhorn_knopp" in self.active_metrics:
+            if self.active_metrics.get("sinkhorn_knopp", False):
                 results["val_sample/sinkhorn_knopp"] = self.calculate_sinkhorn_divergence(
                     pred, target
                 )
-
-            if "mmd" in self.active_metrics:
+            if self.active_metrics.get("mmd", False):
                 results["val_sample/mmd"] = self.calculate_mmd(pred, target)
 
-            if "epsilon_coverage" in self.active_metrics:
+            if self.active_metrics.get("epsilon_coverage", False):
                 results["val_sample/epsilon_coverage"] = (
                     self.calculate_epsilon_coverage(pred, target)
                 )
 
-            if "epsilon_precision" in self.active_metrics:
+            if self.active_metrics.get("epsilon_precision", False):
                 results["val_sample/epsilon_precision"] = (
                     self.calculate_epsilon_precision(pred, target)
                 )
 
-            if "frechet_variance" in self.active_metrics:
+            if self.active_metrics.get("frechet_variance", False):
                 frechet_pred = self.calculate_frechet_variance(pred)
                 frechet_target = self.calculate_frechet_variance(target)
 
@@ -525,7 +515,7 @@ class ManifoldMetricHandler:
                     frechet_pred / torch.clamp(frechet_target, min=1e-8)
                 )
 
-            if "dispersion" in self.active_metrics:
+            if self.active_metrics.get("dispersion", False):
                 disp_pred = self.calculate_dispersion(pred)
                 disp_target = self.calculate_dispersion(target)
 
@@ -537,7 +527,7 @@ class ManifoldMetricHandler:
 
             #! Should add radial/angular decomposition here
 
-            if "stability" in self.active_metrics:
+            if self.active_metrics.get("stability", False):
                 results["val_sample/finite_fraction"] = self.finite_fraction(pred)
 
             if pred.shape == target.shape:
@@ -551,7 +541,7 @@ class ManifoldMetricHandler:
                     
 
                 results["val_sample/geodesic_dist"] = dist_val
-            if self.cfg.get("save_densities", False):
+            if self.metrics_params.get("save_densities", False):
                 self.save_density_state(pred, target, step)
 
         return results

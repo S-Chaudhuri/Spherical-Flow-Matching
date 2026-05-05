@@ -33,6 +33,7 @@ from manifm.manifolds import (
     Mesh,
     SPD,
     PoincareBall,
+    SphereCurvature
 )
 from manifm.manifolds.spd import plot_cone
 from manifm.manifolds import geodesic
@@ -284,23 +285,28 @@ class ManifoldFMLitModule(pl.LightningModule):
         if not force and not self.cfg.get("visualize", False):
             return
 
-        if isinstance(self.manifold, Sphere) and self.dim == 3:
-            self.plot_earth2d(batch)
+        if isinstance(self.manifold, SphereCurvature) and self.dim == 2:
+            self.plot_sphere_2d(batch)
 
-        if isinstance(self.manifold, FlatTorus) and self.dim == 2:
-            self.plot_torus2d(batch)
-
-        if isinstance(self.manifold, Mesh) and self.dim == 3:
-            self.plot_mesh(batch)
-
-        if isinstance(self.manifold, SPD) and self.dim >= 3:
-            self.plot_spd(batch)
+        if isinstance(self.manifold, SphereCurvature) and self.dim == 3:
+            self.plot_sphere_3d(batch)
 
         if isinstance(self.manifold, PoincareBall) and self.dim == 2:
-            self.plot_poincare(batch)
+            self.plot_poincare_2d(batch)
+        
+        if isinstance(self.manifold, PoincareBall) and self.dim == 3:
+            pass
+
+        if isinstance(self.manifold, Euclidean) and self.dim == 2:
+            pass
+
+        if isinstance(self.manifold, Euclidean) and self.dim == 3:
+            pass
+
+        
 
     @torch.no_grad()
-    def plot_poincare(self, batch):
+    def plot_poincare_2d(self, batch):
         os.makedirs("figs", exist_ok=True)
 
         x0 = batch["x0"]
@@ -470,6 +476,7 @@ class ManifoldFMLitModule(pl.LightningModule):
             if K < 0:
                 plot_geodesic(-x_geodesic)
                 plot_geodesic(-y_geodesic)
+
     @torch.no_grad()
     def plot_sphere_2d(self, batch):
         os.makedirs("figs", exist_ok=True)
@@ -512,210 +519,6 @@ class ManifoldFMLitModule(pl.LightningModule):
         ax.set_aspect('equal')
         plt.axis("off")
         plt.savefig(f"figs/sphere2d-{self.global_step:06d}.png")
-        plt.close()
-
-    @torch.no_grad()
-    def plot_spd(self, batch):
-        os.makedirs("figs", exist_ok=True)
-
-        ax = plot_cone()
-
-        samples = self.sample(batch.shape[0], device=batch.device)
-
-        # Take a 2x2 slice
-        samples = self.manifold.devectorize(samples)[..., :2, :2]
-        samples = self.manifold.vectorize(samples)
-
-        samples = samples.cpu().numpy()
-        c = samples[:, 1]
-        u = 0.5 * (samples[:, 0] + samples[:, 2])
-        v = 0.5 * (samples[:, 0] - samples[:, 2])
-        ax.scatter(c, v, u, marker=".", c="C1", s=3)
-
-        # Take a 2x2 slice
-        batch = self.manifold.devectorize(batch)[..., :2, :2]
-        batch = self.manifold.vectorize(batch)
-
-        batch = batch.cpu().numpy()
-        c = batch[:, 1]
-        u = 0.5 * (batch[:, 0] + batch[:, 2])
-        v = 0.5 * (batch[:, 0] - batch[:, 2])
-        ax.scatter(c, v, u, marker=".", c="k", s=3)
-
-        plt.tight_layout()
-        plt.savefig(f"figs/samples-{self.global_step:06d}.png")
-        plt.close()
-
-    @torch.no_grad()
-    def plot_mesh(self, batch):
-        os.makedirs("figs", exist_ok=True)
-
-        if isinstance(batch, dict):
-            noise = batch["x0"]
-            data = batch["x1"]
-        else:
-            noise = None
-            data = batch
-
-        # Generate model samples
-        trajs = self.sample_all(data.shape[0], data.device, x0=noise)
-        os.makedirs("figs/trajs", exist_ok=True)
-        for i in range(trajs.shape[0]):
-            xt = trajs[i]
-            points_to_vtk(f"figs/trajs/{self.cfg.data}-samples-{i:04d}", xt)
-
-        # samples = self.sample(data.shape[0], data.device, x0=noise)
-        # points_to_vtk(f"figs/{self.cfg.data}-samples", samples)
-
-        # Compute log probability at vertices
-        v, f = self.manifold.v, self.manifold.f
-
-        logprobs = []
-        for x in tqdm(torch.split(v, 10000)):
-            logprobs.append(self.compute_exact_loglikelihood(x))
-        logprobs = torch.cat(logprobs, dim=0)
-        probs = torch.exp(logprobs)
-        point_data = {"logprobs": logprobs, "probs": probs}
-        trimesh_to_vtk(f"figs/{self.cfg.data}-density", v, f, point_data=point_data)
-
-        plt.tight_layout()
-        plt.savefig(f"figs/samples-{self.global_step:06d}.png")
-        plt.savefig(f"figs/samples-{self.global_step:06d}.pdf")
-        plt.close()
-
-    @torch.no_grad()
-    def plot_earth2d(self, batch):
-        os.makedirs("figs", exist_ok=True)
-
-        # Plot world map
-        world = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
-        ax = world.plot(figsize=(9, 4), antialiased=False, color="grey")
-
-        # Plot model samples
-        # samples = self.sample(batch.shape[0], batch.device)
-        # samples = samples.cpu()
-        # geometry = [Point(lonlat_from_cartesian(x) / np.pi * 180) for x in samples]
-        # pts = geopandas.GeoDataFrame(geometry=geometry)
-        # pts.plot(ax=ax, color="#1a9850", markersize=0.01, alpha=0.7)
-
-        # Plot model likelihood
-        N = 400
-        x = np.linspace(-180.0, 180.0, N)  # longitude
-        y = np.linspace(-90.0, 90.0, N)  # latitude
-        X, Y = np.meshgrid(x, y)
-
-        if os.path.exists(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy"):
-            L = np.load(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy")
-        else:
-            lonlat = np.stack([Y.reshape(-1), X.reshape(-1)], axis=-1)
-            xyz = cartesian_from_latlon(torch.tensor(lonlat) * np.pi / 180)
-            logps = []
-            for c in tqdm(torch.split(xyz, 8000)):
-                c = c.to(batch)
-                logps.append(self.compute_exact_loglikelihood(c).cpu().numpy())
-            logps = np.concatenate(logps, axis=0)
-            L = logps.reshape(N, N)
-            np.save(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy", L)
-
-        P = np.exp(L)
-        cs = ax.contourf(
-            X,
-            Y,
-            P,
-            levels=np.linspace(0, 1, 11),
-            alpha=0.7,
-            extend="max",
-            cmap="BuGn",
-            antialiased=True,
-        )
-
-        # Plot data samples
-        batch = batch.cpu()
-        geometry = [Point(lonlat_from_cartesian(x) / np.pi * 180) for x in batch]
-        pts = geopandas.GeoDataFrame(geometry=geometry)
-        pts.plot(ax=ax, color="#d73027", markersize=0.01, alpha=0.7)
-
-        cbar = plt.colorbar(cs, ax=ax, pad=0.01, ticks=[0, 1])
-        cbar.ax.set_yticklabels(["0", "$\geq$1"])
-        cbar.ax.set_ylabel("likelihood", fontsize=18, rotation=270, labelpad=10)
-        ax.tick_params(axis="both", which="both", direction="in", length=3)
-        cbar.ax.tick_params(axis="both", which="both", direction="in", length=3)
-        cbar.set_alpha(0.7)
-        cbar.draw_all()
-
-        # plt.axis("off")
-        plt.xlim([-180, 180])
-        plt.ylim([-90, 90])
-        plt.xlabel("Longitude", fontsize=18)
-        plt.ylabel("Latitude", fontsize=18)
-        plt.tight_layout()
-        plt.savefig(f"figs/{self.cfg.data}-samples-{self.global_step:06d}.png", dpi=300)
-        plt.savefig(f"figs/{self.cfg.data}-samples-{self.global_step:06d}.pdf")
-        plt.close()
-
-    @torch.no_grad()
-    def plot_torus2d(self, batch):
-        os.makedirs("figs", exist_ok=True)
-
-        plt.rcParams["axes.autolimit_mode"] = "round_numbers"
-
-        plt.figure(figsize=(6.1, 5))
-        ax = plt.gca()
-
-        # Plot model samples
-        # samples = self.sample(batch.shape[0], batch.device)
-        # samples = samples.cpu().numpy()
-        # plt.scatter(samples[..., 0], samples[..., 1], marker=".", c="C0", s=1)
-
-        # Plot density
-        N = 400
-        x = np.linspace(-np.pi, np.pi, N)  # longitude
-        y = np.linspace(-np.pi, np.pi, N)  # latitude
-        X, Y = np.meshgrid(x, y)
-
-        if os.path.exists(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy"):
-            L = np.load(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy")
-        else:
-            inputs = np.stack([X.reshape(-1), Y.reshape(-1)], axis=-1)
-            # wrap to [0, 2pi]
-            inputs = inputs % (2 * np.pi)
-            inputs = torch.tensor(inputs).to(batch)
-            logps = []
-            for c in tqdm(torch.split(inputs, 8000)):
-                logps.append(self.compute_exact_loglikelihood(c).cpu().numpy())
-            logps = np.concatenate(logps, axis=0)
-            L = logps.reshape(N, N)
-            np.save(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy", L)
-
-        X = X / np.pi * 180
-        Y = Y / np.pi * 180
-        cs = ax.contourf(X, Y, L, alpha=0.9, cmap="Blues", antialiased=True)
-
-        # Plot data samples
-        batch = batch.cpu().numpy()[:10000]
-        batch = (batch + np.pi) % (2 * np.pi) - np.pi
-        batch = batch / np.pi * 180
-
-        plt.scatter(
-            batch[..., 0], batch[..., 1], marker=".", c="#d73027", s=0.05, alpha=0.7
-        )
-        plt.xlim([-180, 180])
-        plt.ylim([-180, 180])
-        ax.set_aspect("equal")
-        plt.xlabel(r"$\phi$", fontsize=18)
-        plt.ylabel(r"$\psi$", fontsize=18, rotation=0)
-
-        plt.axhline(y=0.0, color="black", linestyle="--", alpha=0.8, linewidth=0.5)
-        plt.axvline(x=0.0, color="black", linestyle="--", alpha=0.8, linewidth=0.5)
-
-        cbar = plt.colorbar(cs, ax=ax, pad=0.01)
-        cbar.ax.set_ylabel("log likelihood", fontsize=18, rotation=270, labelpad=10)
-        ax.tick_params(axis="both", which="both", direction="in", length=3)
-        cbar.ax.tick_params(axis="both", which="both", direction="in", length=3)
-
-        plt.tight_layout()
-        plt.savefig(f"figs/{self.cfg.data}-{self.global_step:06d}.png", dpi=300)
-        plt.savefig(f"figs/{self.cfg.data}-{self.global_step:06d}.pdf")
         plt.close()
 
     @torch.no_grad()
