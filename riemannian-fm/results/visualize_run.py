@@ -339,7 +339,7 @@ def main():
         return
 
     print(f"Loading data from {args.file}...")
-    raw_data = torch.load(args.file, map_location="cpu")
+    raw_data = torch.load(args.file, map_location="cpu", weights_only=True)
     meta = raw_data.get("meta", {})
     data = extract_data(raw_data)
 
