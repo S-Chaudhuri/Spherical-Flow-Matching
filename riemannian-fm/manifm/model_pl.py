@@ -39,6 +39,7 @@ from manifm.manifolds.spd import plot_cone
 from manifm.manifolds import geodesic
 from manifm.mesh_utils import trimesh_to_vtk, points_to_vtk
 from manifm.solvers import projx_integrator_return_last, projx_integrator
+from manifm.metrics import ManifoldMetricHandler
 
 def div_fn(u):
     """Accepts a function u:R^D -> R^D."""
@@ -94,6 +95,10 @@ class ManifoldFMLitModule(pl.LightningModule):
         # paths for saved evaluation artifacts (relative to Hydra run dir/cwd).
         self._fixed_eval_path = os.path.join("artifacts", "general_dataset_fixed_eval.pt")
         self._final_eval_path = os.path.join("artifacts", "final_fixed_eval_outputs.pt")
+        
+        self.metric_handler = None
+        if cfg.get("general", None) is not None and cfg.get("metrics_used", None) is not None:
+            self.metric_handler = ManifoldMetricHandler(cfg)
 
     @property
     def vecfield(self):
@@ -871,21 +876,73 @@ class ManifoldFMLitModule(pl.LightningModule):
         self.val_metric_best.update(val_loss)
         self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
         self.val_metric.reset()
+        
+    def on_test_epoch_start(self):
+        self._test_sample_pred = []
+        self._test_sample_target = []
 
     def test_step(self, batch: Any, batch_idx: int):
         if isinstance(batch, dict):
-            batch = batch["x1"]
+            x0 = batch.get("x0", None)
+            x1 = batch["x1"]
+        else:
+            x0 = None
+            x1 = batch
 
-        logprob = self.compute_exact_loglikelihood(batch)
+        logprob = self.compute_exact_loglikelihood(x1)
         loss = -logprob.mean()
-        batch_size = batch.shape[0]
+        batch_size = x1.shape[0]
 
         self.log("test/loss", loss, batch_size=batch_size)
         self.test_metric.update(-logprob)
+
+        if self.metric_handler is not None:
+            # vector metrics
+            if x0 is not None and not isinstance(self.manifold, Mesh):
+                N = x1.shape[0]
+
+                t = torch.rand(N, 1, device=x1.device, dtype=x1.dtype)
+                shooting_tangent_vec = self.manifold.logmap(x0, x1)
+
+                def path(t_in):
+                    return self.manifold.expmap(x0, t_in * shooting_tangent_vec)
+
+                x_t, u_t = jvp(path, (t,), (torch.ones_like(t),))
+                x_t = x_t.reshape(N, self.dim)
+                u_t = u_t.reshape(N, self.dim)
+
+                v_pred = self.vecfield(t, x_t).reshape(N, self.dim)
+
+                vec_metrics = self.metric_handler.calculate_all(
+                    v_pred, u_t, mode="vector", x_t=x_t, step=int(self.global_step)
+                )
+                vec_metrics = {k.replace("val_vec/", "test_vec/"): v for k, v in vec_metrics.items()}
+                self.log_dict(vec_metrics, on_step=False, on_epoch=True, batch_size=batch_size, sync_dist=True)
+
+            # sample metrics: collect across the whole test epoch, compute once at epoch end
+            with torch.no_grad():
+                x1_hat = self.sample(x1.shape[0], device=x1.device, x0=x0)
+
+            self._test_sample_pred.append(x1_hat.detach().cpu())
+            self._test_sample_target.append(x1.detach().cpu())
+            
         return {"loss": loss}
 
-    # def test_epoch_end(self):
     def on_test_epoch_end(self):
+        if self.metric_handler is not None and hasattr(self, "_test_sample_pred") and len(self._test_sample_pred) > 0:
+            x1_hat_all = torch.cat(self._test_sample_pred, dim=0).to(self.device)
+            x1_all = torch.cat(self._test_sample_target, dim=0).to(self.device)
+
+            with torch.no_grad():
+                sample_metrics = self.metric_handler.calculate_all(
+                    x1_hat_all, x1_all, mode="sample", step=int(self.global_step)
+                )
+
+            sample_metrics = {k.replace("val_sample/", "test_sample/"): v for k, v in sample_metrics.items()}
+            self.log_dict(sample_metrics, on_step=False, on_epoch=True, batch_size=x1_all.shape[0], sync_dist=True)
+
+        self._test_sample_pred = []
+        self._test_sample_target = []
         self.test_metric.reset()
 
     def configure_optimizers(self):

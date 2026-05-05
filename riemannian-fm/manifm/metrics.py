@@ -97,7 +97,7 @@ class ManifoldMetricHandler:
         x_gen,
         x_real,
         p = 1,  # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
-        blur = 0.05,
+        blur = None,
     ):
         """
         A measure of distributional misalignment: the
