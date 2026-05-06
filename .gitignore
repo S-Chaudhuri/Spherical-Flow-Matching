@@ -44,4 +44,6 @@ runs/
 
 .vscode/
 
-
+# some files used to create Appendix plot
+plotting_test.ipynb
+scaling_plot.pdf
