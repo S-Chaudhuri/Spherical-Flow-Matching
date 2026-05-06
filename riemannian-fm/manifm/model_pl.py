@@ -300,13 +300,10 @@ class ManifoldFMLitModule(pl.LightningModule):
             self.plot_poincare_2d(batch)
         
         if isinstance(self.manifold, PoincareBall) and self.dim == 3:
-            pass
+            self.plot_hyperboloid_3d(batch)
 
-        if isinstance(self.manifold, Euclidean) and self.dim == 2:
-            pass
-
-        if isinstance(self.manifold, Euclidean) and self.dim == 3:
-            pass
+        if isinstance(self.manifold, Euclidean) and self.dim in [2, 3]:
+            self.plot_euclidean(batch, self.dim)
 
         
 
@@ -525,6 +522,120 @@ class ManifoldFMLitModule(pl.LightningModule):
         plt.axis("off")
         plt.savefig(f"figs/sphere2d-{self.global_step:06d}.png")
         plt.close()
+
+    def plot_euclidean(self, batch, dim):
+        os.makedirs("figs", exist_ok=True)
+
+        if isinstance(batch, dict):
+            x0 = batch.get("x0", None)
+            x1 = batch.get("x1", None)
+        else:
+            x0 = batch
+            x1 = None
+
+        if x0 is not None:
+            samples = self.sample(x0.shape[0], device=x0.device, x0=x0)
+        elif x1 is not None:
+            samples = self.sample(x1.shape[0], device=x1.device)
+
+        data = x1 if x1 is not None else x0
+
+        if dim == 2:
+            plt.figure(figsize=(6, 6))
+
+            if data is not None:
+                plt.scatter(data[:, 0], data[:, 1], s=5, label="data", alpha=0.5)
+
+            plt.scatter(samples[:, 0], samples[:, 1], s=5, label="samples", alpha=0.5)
+
+            plt.legend()
+            plt.axis("equal")
+            plt.tight_layout()
+
+        elif dim == 3:
+            fig = plt.figure(figsize=(6, 6))
+            ax = fig.add_subplot(111, projection='3d')
+
+            if data is not None:
+                ax.scatter(data[:, 0], data[:, 1], data[:, 2],
+                        s=5, label="data", alpha=0.5)
+
+            ax.scatter(samples[:, 0], samples[:, 1], samples[:, 2],
+                    s=5, label="samples", alpha=0.5)
+
+            ax.legend()
+
+        else:
+            raise ValueError(f"Unsupported dimension: {dim}. Only 2D and 3D are supported.")
+
+        # --- Save ---
+        plt.savefig(f"figs/euclidean-{self.global_step:06d}.png")
+        plt.close()
+
+    def poincare_to_hyperboloid(self, x):
+        """
+        Convert points from Poincaré ball to hyperboloid model.
+        """
+        norm_sq = torch.sum(x**2, dim=-1, keepdim=True)
+        denom = 1.0 - norm_sq.clamp(max=1 - 1e-5)
+
+        t = (1.0 + norm_sq) / denom
+        spatial = 2.0 * x / denom
+
+        return torch.cat([t, spatial], dim=-1)
+    
+    @torch.no_grad()
+    def plot_hyperboloid_3d(self, batch):
+        """
+        Plot trajectories on the hyperboloid model corresponding to flows in the 2D Poincaré ball
+        
+        """
+        os.makedirs("figs", exist_ok=True)
+
+        if isinstance(batch, dict):
+            x0 = batch["x0"]
+            x1 = batch["x1"]
+        else:
+            x1 = batch
+            x0 = None
+
+        
+        trajs = self.sample_all(x1.shape[0], device=x1.device, x0=x0)
+        samples = trajs[-1]
+
+        
+        x1_h = self.poincare_to_hyperboloid(x1)
+        samples_h = self.poincare_to_hyperboloid(samples)
+        trajs_h = self.poincare_to_hyperboloid(trajs)
+
+        x1_h = x1_h.detach().cpu().numpy()
+        samples_h = samples_h.detach().cpu().numpy()
+        trajs_h = trajs_h.detach().cpu().numpy()
+
+        fig = plt.figure(figsize=(8, 8))
+        ax = fig.add_subplot(111, projection="3d")
+
+        
+        ax.scatter(x1_h[:, 1], x1_h[:, 2], x1_h[:, 0], s=10, label="data")
+        ax.scatter(samples_h[:, 1], samples_h[:, 2], samples_h[:, 0], s=10, label="samples")
+
+        
+        for i in range(min(50, trajs_h.shape[1])):
+            ax.plot(
+                trajs_h[:, i, 1],
+                trajs_h[:, i, 2],
+                trajs_h[:, i, 0],
+                color="gray",
+                alpha=0.5,
+                linewidth=0.5,
+            )
+
+        ax.set_title("Hyperboloid Model (3D)")
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(f"figs/hyperboloid-{self.global_step:06d}.png")
+        plt.close()
+
 
     @torch.no_grad()
     def compute_cost(self, batch):
