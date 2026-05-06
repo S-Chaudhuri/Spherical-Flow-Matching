@@ -18,6 +18,10 @@ general:
   - [1.0, 0.0, 0.0]
   - [-1.0, 0.0, 0.0]
   weights: [0.5, 0.5]
+metrics_used: {sinkhorn_knopp: true, mmd: true, epsilon_coverage: true, epsilon_precision: true,
+  frechet_variance: true, dispersion: true, radial: true, stability: true, rfm: true,
+  cross_curvature: false}
+metrics_param: {sinkhorn_blur: 0.05, coverage_eps_multiplier: 1.0, save_densities: false}
 
 model: {d_model: 512, num_layers: 5, actfn: swish, fourier: null, atol: 1.0e-06, rtol: 1.0e-06,
   metric_normalize: true}
