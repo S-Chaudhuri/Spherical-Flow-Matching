@@ -33,11 +33,13 @@ from manifm.manifolds import (
     Mesh,
     SPD,
     PoincareBall,
+    SphereCurvature
 )
 from manifm.manifolds.spd import plot_cone
 from manifm.manifolds import geodesic
 from manifm.mesh_utils import trimesh_to_vtk, points_to_vtk
 from manifm.solvers import projx_integrator_return_last, projx_integrator
+from manifm.metrics import ManifoldMetricHandler
 
 def div_fn(u):
     """Accepts a function u:R^D -> R^D."""
@@ -93,6 +95,10 @@ class ManifoldFMLitModule(pl.LightningModule):
         # paths for saved evaluation artifacts (relative to Hydra run dir/cwd).
         self._fixed_eval_path = os.path.join("artifacts", "general_dataset_fixed_eval.pt")
         self._final_eval_path = os.path.join("artifacts", "final_fixed_eval_outputs.pt")
+        
+        self.metric_handler = None
+        if cfg.get("general", None) is not None and cfg.get("metrics_used", None) is not None:
+            self.metric_handler = ManifoldMetricHandler(cfg)
 
     @property
     def vecfield(self):
@@ -284,23 +290,25 @@ class ManifoldFMLitModule(pl.LightningModule):
         if not force and not self.cfg.get("visualize", False):
             return
 
-        if isinstance(self.manifold, Sphere) and self.dim == 3:
-            self.plot_earth2d(batch)
+        if isinstance(self.manifold, SphereCurvature) and self.dim == 2:
+            self.plot_sphere_2d(batch)
 
-        if isinstance(self.manifold, FlatTorus) and self.dim == 2:
-            self.plot_torus2d(batch)
-
-        if isinstance(self.manifold, Mesh) and self.dim == 3:
-            self.plot_mesh(batch)
-
-        if isinstance(self.manifold, SPD) and self.dim >= 3:
-            self.plot_spd(batch)
+        if isinstance(self.manifold, SphereCurvature) and self.dim == 3:
+            self.plot_sphere_3d(batch)
 
         if isinstance(self.manifold, PoincareBall) and self.dim == 2:
-            self.plot_poincare(batch)
+            self.plot_poincare_2d(batch)
+        
+        if isinstance(self.manifold, PoincareBall) and self.dim == 3:
+            self.plot_hyperboloid_3d(batch)
+
+        if isinstance(self.manifold, Euclidean) and self.dim in [2, 3]:
+            self.plot_euclidean(batch, self.dim)
+
+        
 
     @torch.no_grad()
-    def plot_poincare(self, batch):
+    def plot_poincare_2d(self, batch):
         os.makedirs("figs", exist_ok=True)
 
         x0 = batch["x0"]
@@ -470,6 +478,7 @@ class ManifoldFMLitModule(pl.LightningModule):
             if K < 0:
                 plot_geodesic(-x_geodesic)
                 plot_geodesic(-y_geodesic)
+
     @torch.no_grad()
     def plot_sphere_2d(self, batch):
         os.makedirs("figs", exist_ok=True)
@@ -514,209 +523,119 @@ class ManifoldFMLitModule(pl.LightningModule):
         plt.savefig(f"figs/sphere2d-{self.global_step:06d}.png")
         plt.close()
 
-    @torch.no_grad()
-    def plot_spd(self, batch):
-        os.makedirs("figs", exist_ok=True)
-
-        ax = plot_cone()
-
-        samples = self.sample(batch.shape[0], device=batch.device)
-
-        # Take a 2x2 slice
-        samples = self.manifold.devectorize(samples)[..., :2, :2]
-        samples = self.manifold.vectorize(samples)
-
-        samples = samples.cpu().numpy()
-        c = samples[:, 1]
-        u = 0.5 * (samples[:, 0] + samples[:, 2])
-        v = 0.5 * (samples[:, 0] - samples[:, 2])
-        ax.scatter(c, v, u, marker=".", c="C1", s=3)
-
-        # Take a 2x2 slice
-        batch = self.manifold.devectorize(batch)[..., :2, :2]
-        batch = self.manifold.vectorize(batch)
-
-        batch = batch.cpu().numpy()
-        c = batch[:, 1]
-        u = 0.5 * (batch[:, 0] + batch[:, 2])
-        v = 0.5 * (batch[:, 0] - batch[:, 2])
-        ax.scatter(c, v, u, marker=".", c="k", s=3)
-
-        plt.tight_layout()
-        plt.savefig(f"figs/samples-{self.global_step:06d}.png")
-        plt.close()
-
-    @torch.no_grad()
-    def plot_mesh(self, batch):
+    def plot_euclidean(self, batch, dim):
         os.makedirs("figs", exist_ok=True)
 
         if isinstance(batch, dict):
-            noise = batch["x0"]
-            data = batch["x1"]
+            x0 = batch.get("x0", None)
+            x1 = batch.get("x1", None)
         else:
-            noise = None
-            data = batch
+            x0 = batch
+            x1 = None
 
-        # Generate model samples
-        trajs = self.sample_all(data.shape[0], data.device, x0=noise)
-        os.makedirs("figs/trajs", exist_ok=True)
-        for i in range(trajs.shape[0]):
-            xt = trajs[i]
-            points_to_vtk(f"figs/trajs/{self.cfg.data}-samples-{i:04d}", xt)
+        if x0 is not None:
+            samples = self.sample(x0.shape[0], device=x0.device, x0=x0)
+        elif x1 is not None:
+            samples = self.sample(x1.shape[0], device=x1.device)
 
-        # samples = self.sample(data.shape[0], data.device, x0=noise)
-        # points_to_vtk(f"figs/{self.cfg.data}-samples", samples)
+        data = x1 if x1 is not None else x0
 
-        # Compute log probability at vertices
-        v, f = self.manifold.v, self.manifold.f
+        if dim == 2:
+            plt.figure(figsize=(6, 6))
 
-        logprobs = []
-        for x in tqdm(torch.split(v, 10000)):
-            logprobs.append(self.compute_exact_loglikelihood(x))
-        logprobs = torch.cat(logprobs, dim=0)
-        probs = torch.exp(logprobs)
-        point_data = {"logprobs": logprobs, "probs": probs}
-        trimesh_to_vtk(f"figs/{self.cfg.data}-density", v, f, point_data=point_data)
+            if data is not None:
+                plt.scatter(data[:, 0], data[:, 1], s=5, label="data", alpha=0.5)
 
-        plt.tight_layout()
-        plt.savefig(f"figs/samples-{self.global_step:06d}.png")
-        plt.savefig(f"figs/samples-{self.global_step:06d}.pdf")
+            plt.scatter(samples[:, 0], samples[:, 1], s=5, label="samples", alpha=0.5)
+
+            plt.legend()
+            plt.axis("equal")
+            plt.tight_layout()
+
+        elif dim == 3:
+            fig = plt.figure(figsize=(6, 6))
+            ax = fig.add_subplot(111, projection='3d')
+
+            if data is not None:
+                ax.scatter(data[:, 0], data[:, 1], data[:, 2],
+                        s=5, label="data", alpha=0.5)
+
+            ax.scatter(samples[:, 0], samples[:, 1], samples[:, 2],
+                    s=5, label="samples", alpha=0.5)
+
+            ax.legend()
+
+        else:
+            raise ValueError(f"Unsupported dimension: {dim}. Only 2D and 3D are supported.")
+
+        # --- Save ---
+        plt.savefig(f"figs/euclidean-{self.global_step:06d}.png")
         plt.close()
 
+    def poincare_to_hyperboloid(self, x):
+        """
+        Convert points from Poincaré ball to hyperboloid model.
+        """
+        norm_sq = torch.sum(x**2, dim=-1, keepdim=True)
+        denom = 1.0 - norm_sq.clamp(max=1 - 1e-5)
+
+        t = (1.0 + norm_sq) / denom
+        spatial = 2.0 * x / denom
+
+        return torch.cat([t, spatial], dim=-1)
+    
     @torch.no_grad()
-    def plot_earth2d(self, batch):
+    def plot_hyperboloid_3d(self, batch):
+        """
+        Plot trajectories on the hyperboloid model corresponding to flows in the 2D Poincaré ball
+        
+        """
         os.makedirs("figs", exist_ok=True)
 
-        # Plot world map
-        world = geopandas.read_file(geopandas.datasets.get_path("naturalearth_lowres"))
-        ax = world.plot(figsize=(9, 4), antialiased=False, color="grey")
-
-        # Plot model samples
-        # samples = self.sample(batch.shape[0], batch.device)
-        # samples = samples.cpu()
-        # geometry = [Point(lonlat_from_cartesian(x) / np.pi * 180) for x in samples]
-        # pts = geopandas.GeoDataFrame(geometry=geometry)
-        # pts.plot(ax=ax, color="#1a9850", markersize=0.01, alpha=0.7)
-
-        # Plot model likelihood
-        N = 400
-        x = np.linspace(-180.0, 180.0, N)  # longitude
-        y = np.linspace(-90.0, 90.0, N)  # latitude
-        X, Y = np.meshgrid(x, y)
-
-        if os.path.exists(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy"):
-            L = np.load(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy")
+        if isinstance(batch, dict):
+            x0 = batch["x0"]
+            x1 = batch["x1"]
         else:
-            lonlat = np.stack([Y.reshape(-1), X.reshape(-1)], axis=-1)
-            xyz = cartesian_from_latlon(torch.tensor(lonlat) * np.pi / 180)
-            logps = []
-            for c in tqdm(torch.split(xyz, 8000)):
-                c = c.to(batch)
-                logps.append(self.compute_exact_loglikelihood(c).cpu().numpy())
-            logps = np.concatenate(logps, axis=0)
-            L = logps.reshape(N, N)
-            np.save(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy", L)
+            x1 = batch
+            x0 = None
 
-        P = np.exp(L)
-        cs = ax.contourf(
-            X,
-            Y,
-            P,
-            levels=np.linspace(0, 1, 11),
-            alpha=0.7,
-            extend="max",
-            cmap="BuGn",
-            antialiased=True,
-        )
+        
+        trajs = self.sample_all(x1.shape[0], device=x1.device, x0=x0)
+        samples = trajs[-1]
 
-        # Plot data samples
-        batch = batch.cpu()
-        geometry = [Point(lonlat_from_cartesian(x) / np.pi * 180) for x in batch]
-        pts = geopandas.GeoDataFrame(geometry=geometry)
-        pts.plot(ax=ax, color="#d73027", markersize=0.01, alpha=0.7)
+        
+        x1_h = self.poincare_to_hyperboloid(x1)
+        samples_h = self.poincare_to_hyperboloid(samples)
+        trajs_h = self.poincare_to_hyperboloid(trajs)
 
-        cbar = plt.colorbar(cs, ax=ax, pad=0.01, ticks=[0, 1])
-        cbar.ax.set_yticklabels(["0", "$\geq$1"])
-        cbar.ax.set_ylabel("likelihood", fontsize=18, rotation=270, labelpad=10)
-        ax.tick_params(axis="both", which="both", direction="in", length=3)
-        cbar.ax.tick_params(axis="both", which="both", direction="in", length=3)
-        cbar.set_alpha(0.7)
-        cbar.draw_all()
+        x1_h = x1_h.detach().cpu().numpy()
+        samples_h = samples_h.detach().cpu().numpy()
+        trajs_h = trajs_h.detach().cpu().numpy()
 
-        # plt.axis("off")
-        plt.xlim([-180, 180])
-        plt.ylim([-90, 90])
-        plt.xlabel("Longitude", fontsize=18)
-        plt.ylabel("Latitude", fontsize=18)
+        fig = plt.figure(figsize=(8, 8))
+        ax = fig.add_subplot(111, projection="3d")
+
+        
+        ax.scatter(x1_h[:, 1], x1_h[:, 2], x1_h[:, 0], s=10, label="data")
+        ax.scatter(samples_h[:, 1], samples_h[:, 2], samples_h[:, 0], s=10, label="samples")
+
+        
+        for i in range(min(50, trajs_h.shape[1])):
+            ax.plot(
+                trajs_h[:, i, 1],
+                trajs_h[:, i, 2],
+                trajs_h[:, i, 0],
+                color="gray",
+                alpha=0.5,
+                linewidth=0.5,
+            )
+
+        ax.set_title("Hyperboloid Model (3D)")
+        ax.legend()
         plt.tight_layout()
-        plt.savefig(f"figs/{self.cfg.data}-samples-{self.global_step:06d}.png", dpi=300)
-        plt.savefig(f"figs/{self.cfg.data}-samples-{self.global_step:06d}.pdf")
+        plt.savefig(f"figs/hyperboloid-{self.global_step:06d}.png")
         plt.close()
 
-    @torch.no_grad()
-    def plot_torus2d(self, batch):
-        os.makedirs("figs", exist_ok=True)
-
-        plt.rcParams["axes.autolimit_mode"] = "round_numbers"
-
-        plt.figure(figsize=(6.1, 5))
-        ax = plt.gca()
-
-        # Plot model samples
-        # samples = self.sample(batch.shape[0], batch.device)
-        # samples = samples.cpu().numpy()
-        # plt.scatter(samples[..., 0], samples[..., 1], marker=".", c="C0", s=1)
-
-        # Plot density
-        N = 400
-        x = np.linspace(-np.pi, np.pi, N)  # longitude
-        y = np.linspace(-np.pi, np.pi, N)  # latitude
-        X, Y = np.meshgrid(x, y)
-
-        if os.path.exists(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy"):
-            L = np.load(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy")
-        else:
-            inputs = np.stack([X.reshape(-1), Y.reshape(-1)], axis=-1)
-            # wrap to [0, 2pi]
-            inputs = inputs % (2 * np.pi)
-            inputs = torch.tensor(inputs).to(batch)
-            logps = []
-            for c in tqdm(torch.split(inputs, 8000)):
-                logps.append(self.compute_exact_loglikelihood(c).cpu().numpy())
-            logps = np.concatenate(logps, axis=0)
-            L = logps.reshape(N, N)
-            np.save(f"figs/{self.cfg.data}-logps-{N}-{self.global_step:06d}.npy", L)
-
-        X = X / np.pi * 180
-        Y = Y / np.pi * 180
-        cs = ax.contourf(X, Y, L, alpha=0.9, cmap="Blues", antialiased=True)
-
-        # Plot data samples
-        batch = batch.cpu().numpy()[:10000]
-        batch = (batch + np.pi) % (2 * np.pi) - np.pi
-        batch = batch / np.pi * 180
-
-        plt.scatter(
-            batch[..., 0], batch[..., 1], marker=".", c="#d73027", s=0.05, alpha=0.7
-        )
-        plt.xlim([-180, 180])
-        plt.ylim([-180, 180])
-        ax.set_aspect("equal")
-        plt.xlabel(r"$\phi$", fontsize=18)
-        plt.ylabel(r"$\psi$", fontsize=18, rotation=0)
-
-        plt.axhline(y=0.0, color="black", linestyle="--", alpha=0.8, linewidth=0.5)
-        plt.axvline(x=0.0, color="black", linestyle="--", alpha=0.8, linewidth=0.5)
-
-        cbar = plt.colorbar(cs, ax=ax, pad=0.01)
-        cbar.ax.set_ylabel("log likelihood", fontsize=18, rotation=270, labelpad=10)
-        ax.tick_params(axis="both", which="both", direction="in", length=3)
-        cbar.ax.tick_params(axis="both", which="both", direction="in", length=3)
-
-        plt.tight_layout()
-        plt.savefig(f"figs/{self.cfg.data}-{self.global_step:06d}.png", dpi=300)
-        plt.savefig(f"figs/{self.cfg.data}-{self.global_step:06d}.pdf")
-        plt.close()
 
     @torch.no_grad()
     def compute_cost(self, batch):
@@ -1068,21 +987,73 @@ class ManifoldFMLitModule(pl.LightningModule):
         self.val_metric_best.update(val_loss)
         self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
         self.val_metric.reset()
+        
+    def on_test_epoch_start(self):
+        self._test_sample_pred = []
+        self._test_sample_target = []
 
     def test_step(self, batch: Any, batch_idx: int):
         if isinstance(batch, dict):
-            batch = batch["x1"]
+            x0 = batch.get("x0", None)
+            x1 = batch["x1"]
+        else:
+            x0 = None
+            x1 = batch
 
-        logprob = self.compute_exact_loglikelihood(batch)
+        logprob = self.compute_exact_loglikelihood(x1)
         loss = -logprob.mean()
-        batch_size = batch.shape[0]
+        batch_size = x1.shape[0]
 
         self.log("test/loss", loss, batch_size=batch_size)
         self.test_metric.update(-logprob)
+
+        if self.metric_handler is not None:
+            # vector metrics
+            if x0 is not None and not isinstance(self.manifold, Mesh):
+                N = x1.shape[0]
+
+                t = torch.rand(N, 1, device=x1.device, dtype=x1.dtype)
+                shooting_tangent_vec = self.manifold.logmap(x0, x1)
+
+                def path(t_in):
+                    return self.manifold.expmap(x0, t_in * shooting_tangent_vec)
+
+                x_t, u_t = jvp(path, (t,), (torch.ones_like(t),))
+                x_t = x_t.reshape(N, self.dim)
+                u_t = u_t.reshape(N, self.dim)
+
+                v_pred = self.vecfield(t, x_t).reshape(N, self.dim)
+
+                vec_metrics = self.metric_handler.calculate_all(
+                    v_pred, u_t, mode="vector", x_t=x_t, step=int(self.global_step)
+                )
+                vec_metrics = {k.replace("val_vec/", "test_vec/"): v for k, v in vec_metrics.items()}
+                self.log_dict(vec_metrics, on_step=False, on_epoch=True, batch_size=batch_size, sync_dist=True)
+
+            # sample metrics: collect across the whole test epoch, compute once at epoch end
+            with torch.no_grad():
+                x1_hat = self.sample(x1.shape[0], device=x1.device, x0=x0)
+
+            self._test_sample_pred.append(x1_hat.detach().cpu())
+            self._test_sample_target.append(x1.detach().cpu())
+            
         return {"loss": loss}
 
-    # def test_epoch_end(self):
     def on_test_epoch_end(self):
+        if self.metric_handler is not None and hasattr(self, "_test_sample_pred") and len(self._test_sample_pred) > 0:
+            x1_hat_all = torch.cat(self._test_sample_pred, dim=0).to(self.device)
+            x1_all = torch.cat(self._test_sample_target, dim=0).to(self.device)
+
+            with torch.no_grad():
+                sample_metrics = self.metric_handler.calculate_all(
+                    x1_hat_all, x1_all, mode="sample", step=int(self.global_step)
+                )
+
+            sample_metrics = {k.replace("val_sample/", "test_sample/"): v for k, v in sample_metrics.items()}
+            self.log_dict(sample_metrics, on_step=False, on_epoch=True, batch_size=x1_all.shape[0], sync_dist=True)
+
+        self._test_sample_pred = []
+        self._test_sample_target = []
         self.test_metric.reset()
 
     def configure_optimizers(self):
