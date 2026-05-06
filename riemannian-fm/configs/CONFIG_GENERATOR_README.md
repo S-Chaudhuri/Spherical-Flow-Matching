@@ -88,8 +88,31 @@ python generate_mog_config.py \
 | `--x0_dist` | `gaussian` | The base/source distribution. | 
 | `--n_samples` | `20000` | Number of points to sample. | 
 | `--std_x0` | `0.7` | Spread of the source distribution. | 
+| `--origin` | `null` | Define a specific coordinate array for the origin point on the manifold. (e.g., `--origin 0.0 0.0 0.0`). | 
 
-### Boolean Flags (Toggles)
+### Metrics Settings
+By default, almost all evaluation metrics are enabled. You can toggle them off using the `--no_<metric>` flags. 
+
+| Metric Flag | Default State | Action |
+| :--- | :--- | :--- |
+| `--no_sinkhorn_knopp` | ON | Disables the Sinkhorn-Knopp metric |
+| `--no_mmd` | ON | Disables Maximum Mean Discrepancy metric |
+| `--no_epsilon_coverage` | ON | Disables Epsilon Coverage metric |
+| `--no_epsilon_precision`| ON | Disables Epsilon Precision metric |
+| `--no_frechet_variance` | ON | Disables Fréchet Variance metric |
+| `--no_dispersion` | ON | Disables Dispersion metric |
+| `--no_radial` | ON | Disables Radial metric |
+| `--no_stability` | ON | Disables Stability metric |
+| `--no_rfm` | ON | Disables standard RFM metric |
+| `--cross_curvature` | OFF | **Enables** Cross-Curvature metric |
+
+### Metrics Parameters
+You can fine-tune how the metrics are calculated:
+* `--sinkhorn_blur`: Float (default: `0.05`). Adjusts the entropy regularization blur for the Sinkhorn divergence.
+* `--coverage_eps_multiplier`: Float (default: `1.0`). Multiplier for epsilon coverage bounds.
+* `--save_densities`: Flag (default: `False`). If passed, the evaluation loop will save computed densities to disk.
+
+### Evaluation & Logging Settings
 We use a standard flag system for booleans.
 - **To turn ON a feature (defaults to False):** Use the flag directly (e.g., `--eval_projx`).
 - **To turn OFF a feature (defaults to True):** Use the `no_` prefix (e.g., `--no_visualize`, `--no_metric_normalize`).

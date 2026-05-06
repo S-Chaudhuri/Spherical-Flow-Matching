@@ -21,6 +21,7 @@ def parse_args():
     general_group.add_argument("--n_samples", type=int, default=20000, help="Number of samples")
     general_group.add_argument("--std_x0", type=float, default=0.7, help="Standard deviation of x0")
     general_group.add_argument("--mean_x0", type=float, nargs='+', default=[0.0, 0.0, 0.0], help="Mean of x0")
+    general_group.add_argument("--origin", type=float, nargs='+', default=None, help="Origin point on the manifold (default: null)")
 
     # --- MoG Topology Arguments ---
     mog_group = parser.add_argument_group("Mixture of Gaussians Topology")
@@ -29,6 +30,25 @@ def parse_args():
     mog_group.add_argument("--stds", type=str, nargs='+', required=True, help="List of strings: Standard deviations per level. Use '0.1' for isotropic or '0.1,0.2,0.1' for anisotropic.")
     mog_group.add_argument("--weights", type=float, nargs='+', required=True, help="List of floats: Base importance weight for the Gaussians at each level.")
     mog_group.add_argument("--overrides", type=str, default="{}", help="JSON string to override specific Gaussians. Format: '{\"L0_G1\": {\"weight\": 2.0, \"std\": [0.5, 0.5, 0.0]}}'")
+
+    # --- Metrics Used (Toggles) ---
+    metrics_group = parser.add_argument_group("Metrics Used Settings")
+    metrics_group.add_argument("--no_sinkhorn_knopp", action="store_false", dest="sinkhorn_knopp", help="Disable Sinkhorn-Knopp metric")
+    metrics_group.add_argument("--no_mmd", action="store_false", dest="mmd", help="Disable MMD metric")
+    metrics_group.add_argument("--no_epsilon_coverage", action="store_false", dest="epsilon_coverage", help="Disable Epsilon Coverage metric")
+    metrics_group.add_argument("--no_epsilon_precision", action="store_false", dest="epsilon_precision", help="Disable Epsilon Precision metric")
+    metrics_group.add_argument("--no_frechet_variance", action="store_false", dest="frechet_variance", help="Disable Frechet Variance metric")
+    metrics_group.add_argument("--no_dispersion", action="store_false", dest="dispersion", help="Disable Dispersion metric")
+    metrics_group.add_argument("--no_radial", action="store_false", dest="radial", help="Disable Radial metric")
+    metrics_group.add_argument("--no_stability", action="store_false", dest="stability", help="Disable Stability metric")
+    metrics_group.add_argument("--no_rfm", action="store_false", dest="rfm", help="Disable RFM metric")
+    metrics_group.add_argument("--cross_curvature", action="store_true", dest="cross_curvature", help="Enable Cross-Curvature metric")
+
+    # --- Metrics Parameters ---
+    metrics_param_group = parser.add_argument_group("Metrics Parameters")
+    metrics_param_group.add_argument("--sinkhorn_blur", type=float, default=0.05, help="Sinkhorn blur parameter")
+    metrics_param_group.add_argument("--coverage_eps_multiplier", type=float, default=1.0, help="Coverage epsilon multiplier")
+    metrics_param_group.add_argument("--save_densities", action="store_true", help="Enable saving densities (sets save_densities: True)")
 
     # --- Model Settings ---
     model_group = parser.add_argument_group("Model settings")
@@ -154,6 +174,23 @@ def main():
             "std_x1": stds,
             "mean_x1": means,
             "weights": weights,
+        },
+        "metrics_used": {
+            "sinkhorn_knopp": args.sinkhorn_knopp,
+            "mmd": args.mmd,
+            "epsilon_coverage": args.epsilon_coverage,
+            "epsilon_precision": args.epsilon_precision,
+            "frechet_variance": args.frechet_variance,
+            "dispersion": args.dispersion,
+            "radial": args.radial,
+            "stability": args.stability,
+            "rfm": args.rfm,
+            "cross_curvature": args.cross_curvature,
+        },
+        "metrics_param": {
+            "sinkhorn_blur": args.sinkhorn_blur,
+            "coverage_eps_multiplier": args.coverage_eps_multiplier,
+            "save_densities": args.save_densities,
         },
         "model": {
             "d_model": args.d_model,
