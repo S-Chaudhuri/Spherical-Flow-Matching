@@ -13,7 +13,25 @@ general:
   std_x1: 0.7
   mean_x0: [0.0, 0.0, 0.0]
   mean_x1: [0.8, 0.0, 0.0]
-  weights: None # for mixture of gaussians, define as list: [0.5, 0.5]
+  weights: null # for mixture of gaussians, define as list: [0.5, 0.5]
+  origin: null 
+
+metrics_used:
+  sinkhorn_knopp: True
+  mmd: True
+  epsilon_coverage: True
+  epsilon_precision: True
+  frechet_variance: True
+  dispersion: True
+  radial: True
+  stability: True
+  rfm: True
+  cross_curvature: False
+
+metrics_param:
+  sinkhorn_blur: 0.05
+  coverage_eps_multiplier: 1.0
+  save_densities: False
 
 model:
   d_model: 512
