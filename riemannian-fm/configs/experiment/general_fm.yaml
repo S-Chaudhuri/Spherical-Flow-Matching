@@ -50,8 +50,8 @@ optim:
   val_batch_size: 2000
   lr: 1e-4
 
-val_every: 500
-early_stopping_patience: 200
+val_every: 50
+early_stopping_patience: 1000
 div_mode: rademacher
 eval_projx: False
 local_coords: False
