@@ -51,6 +51,7 @@ optim:
   lr: 1e-4
 
 val_every: 500
+early_stopping_patience: 200
 div_mode: rademacher
 eval_projx: False
 local_coords: False

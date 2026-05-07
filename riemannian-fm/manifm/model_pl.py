@@ -12,6 +12,7 @@ from tqdm import tqdm
 import geoopt
 import torch
 import torch.nn.functional as F
+import math
 from torchmetrics import MeanMetric, MinMetric
 import pytorch_lightning as pl
 from torch.func import vjp, jvp, vmap, jacrev
@@ -95,6 +96,12 @@ class ManifoldFMLitModule(pl.LightningModule):
         # paths for saved evaluation artifacts (relative to Hydra run dir/cwd).
         self._fixed_eval_path = os.path.join("artifacts", "general_dataset_fixed_eval.pt")
         self._final_eval_path = os.path.join("artifacts", "final_fixed_eval_outputs.pt")
+
+        # early stopping params
+        self._early_stopping_patience = int(cfg.get("early_stopping_patience", 0) or 0)
+        self._early_stopping_best = float("inf")
+        self._early_stopping_best_step = -1
+        self._early_stopping_ckpt_path = os.path.join("checkpoints", "early_stop_best.ckpt")
         
         self.metric_handler = None
         if cfg.get("general", None) is not None:
@@ -1004,6 +1011,36 @@ class ManifoldFMLitModule(pl.LightningModule):
         val_loss = self.val_metric.compute()
         self.val_metric_best.update(val_loss)
         self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
+
+        # early stopping on validation loss
+        if (
+            self._early_stopping_patience > 0
+            and getattr(self, "trainer", None) is not None
+            and not getattr(self.trainer, "sanity_checking", False)
+        ):
+            if torch.is_tensor(val_loss):
+                val_loss_scalar = float(val_loss.detach().cpu().item())
+                val_loss_finite = bool(torch.isfinite(val_loss).item())
+            else:
+                val_loss_scalar = float(val_loss)
+                val_loss_finite = math.isfinite(val_loss_scalar)
+
+            if val_loss_finite:
+                step = int(self.global_step)
+                # update newest low loss and step at which it was achieved
+                if val_loss_scalar < self._early_stopping_best:
+                    self._early_stopping_best = val_loss_scalar
+                    self._early_stopping_best_step = step
+                    if getattr(self.trainer, "is_global_zero", True):
+                        os.makedirs(os.path.dirname(self._early_stopping_ckpt_path), exist_ok=True)
+                        self.trainer.save_checkpoint(self._early_stopping_ckpt_path)
+                # check if the amount of steps since last lowest exceeds threshold
+                elif (step - int(self._early_stopping_best_step)) >= self._early_stopping_patience:
+                    self.trainer.should_stop = True
+                    fit_loop = getattr(self.trainer, "fit_loop", None)
+                    if fit_loop is not None:
+                        fit_loop.should_stop = True
+
         self.val_metric.reset()
         
     def on_test_epoch_start(self):
