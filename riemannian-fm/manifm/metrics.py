@@ -18,23 +18,24 @@ class ManifoldMetricHandler:
         gcfg = cfg.get("general", None)
         self.gcfg = gcfg
 
-        self.active_metrics = cfg.get(  # choose the metrics to actively track
-            "metrics_to_use",
-            [
-                "sinkhorn_knopp",
-                "mmd",
-                "epsilon_coverage",
-                "epsilon_precision",
-                "frechet_variance",
-                "dispersion",
-                "radial",
-                "stability",
-                "rfm",
-                "volume_scaling",
-            ],
+        self.metrics_used = cfg.get(
+            "metrics_used",
+            {
+                "sinkhorn_knopp": True,
+                "tangent_sinkhorn_knopp": True,
+                "mmd": True,
+                "epsilon_coverage": True,
+                "epsilon_precision": True,
+                "frechet_variance": True,
+                "dispersion": True,
+                "radial": True,
+                "stability": True,
+                "rfm": True,
+                "volume_scaling": True,
+            },
         )
-        self.metrics_params = cfg.get("metrics_param", None)  # parameters for metrics, e.g. blur for Sinkhorn-Knopp
-        self.cross_curvature = cfg.get("cross_curvature", False)  # whether to normalize metrics for better cross-curvature comparison
+        self.metrics_params = cfg.get("metrics_param", {}) or {} # parameters for metrics, e.g. blur for Sinkhorn-Knopp
+        self.cross_curvature = cfg.get("cross_curvature", False) # whether to normalize metrics for better cross-curvature comparison
 
         self.m_type = gcfg.get("manifold", "euclidean").lower()
         self.dim = int(gcfg.get("dim"))
@@ -75,7 +76,6 @@ class ManifoldMetricHandler:
         if self.m_type == "poincare":
             return torch.zeros(1, x.shape[-1], device=x.device, dtype=x.dtype)
 
-        #! See if this lines up with the SphereCurvature class
         if self.m_type == "sphere":
             radius = 1.0 / torch.sqrt(
                 torch.as_tensor(self.curvature, device=x.device, dtype=x.dtype)
@@ -85,6 +85,55 @@ class ManifoldMetricHandler:
             return origin
 
         raise ValueError(f"origin not defined for manifold: {self.m_type}")
+    
+
+    def tangent_coordinates(self, x):
+        """ map samples x on the manifold to the tangent space
+        at the fixed origin using the logarithmic map """
+        origin = self.get_origin(x).expand_as(x)
+
+        if self.m_type == "euclidean":
+            return x - origin
+        return self.manifold.logmap(origin, x)
+
+
+    def tangent_coordinates_scaled(self, x):
+        """ scale the tangent coordinates by sqrt(|kappa|)
+        only for tangent-space Sinkhorn cross-curvature comparison """
+        v = self.tangent_coordinates(x)
+
+        normalize = self.metrics_params.get("normalize_tangent_sinkhorn", True)
+        if normalize and self.kappa != 0:
+            v = v * torch.sqrt(
+                torch.as_tensor(abs(self.kappa), device=v.device, dtype=v.dtype)
+            )
+        return v
+    
+
+    def calculate_tangent_sinkhorn(
+        self,
+        x_gen,
+        x_real,
+        p = 1,
+        blur = None,
+    ):
+        """ Sinkhorn divergence after projecting both distributions
+        to the tangent space at the fixed origin via the logarithmic map """
+        if blur is None:
+            blur = self.metrics_params.get("sinkhorn_blur", 0.05)
+
+        v_gen = self.tangent_coordinates_scaled(x_gen)
+        v_real = self.tangent_coordinates_scaled(x_real)
+
+        solver = SamplesLoss(
+            loss = "sinkhorn",
+            p = p,
+            blur = blur,
+            debias = True,
+        )
+        val = solver(v_gen, v_real)
+        val = torch.clamp(val, min = 0.0) ** (1.0 / p)
+        return val
     
 
     def scaled_dist(self, x, y):
@@ -128,8 +177,8 @@ class ManifoldMetricHandler:
         # if self.cross_curvature and self.kappa != 0: #normalizing for better cross-curvature comparison
         #     blur = blur * (abs(self.kappa) ** 0.5)
             
-        if self.m_type == "euclidean":
-            solver = SamplesLoss(loss="sinkhorn", p=p, blur=blur)
+        if self.m_type == "euclidean":  # debias = True, i.e. use Sinkhorn divergence
+            solver = SamplesLoss(loss = "sinkhorn", p = p, blur = blur, debias = True)
             val = solver(x_gen, x_real)
             
         else:
@@ -139,11 +188,11 @@ class ManifoldMetricHandler:
                 x_exp = x.unsqueeze(1)  # (N, 1, D)
                 y_exp = y.unsqueeze(0)  # (1, M, D)
                 
-                if self.cross_curvature:
-                   d = self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
-                   return d ** p
-                else:
-                   return self.manifold.dist(x_exp, y_exp) ** p
+                # if self.cross_curvature:
+                #    d = self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
+                #    return d ** p
+                # else:
+                return self.manifold.dist(x_exp, y_exp) ** p
 
             solver = SamplesLoss(
                 loss = "sinkhorn",
@@ -252,24 +301,16 @@ class ManifoldMetricHandler:
         return (nearest <= eps).float().mean()
 
 
-    # def _norm(self, v, x):
-    #     if self.m_type != "euclidean":
-    #         norm = torch.sqrt(self.manifold.inner(x, v, v).clamp(min = 1e-12))
-    #     else:
-    #         norm = torch.linalg.norm(v, dim = -1)
-    #     return norm
-
-
     def _norm(self, v, x):
         """
         Computes tangent-vector norms using the Riemannian metric
         """
-        #! Verify whether this is correct...
         if self.m_type == "euclidean":
             return torch.linalg.norm(v, dim=-1)
 
         inner = self.manifold.inner(x, v, v)
         return torch.sqrt(torch.clamp(inner, min=1e-12))
+
 
     def frechet_mean(self, x, max_iter=50, lr=0.1):
         if self.m_type == "euclidean":
@@ -286,6 +327,17 @@ class ManifoldMetricHandler:
                 if hasattr(self.manifold, "projx"):
                     mu = self.manifold.projx(mu)
         return mu
+    
+
+    def elementwise_scaled_dist(self, x, y):
+        if self.m_type == "euclidean":
+            return torch.linalg.norm(x - y, dim = -1)
+
+        d = self.manifold.dist(x, y)
+        if self.kappa != 0:
+            scale = torch.sqrt(torch.tensor(abs(self.kappa), device = d.device, dtype = d.dtype))
+            d = d * scale
+        return d
 
 
     def calculate_frechet_variance(self, samples):
@@ -298,8 +350,7 @@ class ManifoldMetricHandler:
         # ADDED: scaled distance here for cross-curvature comparison.
         # The intrinsic point 'mu' is mathematically valid regardless of logmap scaling.
         if self.cross_curvature:
-            return self.scaled_dist(samples, mu_expanded).pow(2).mean()
-            
+            return self.elementwise_scaled_dist(samples, mu_expanded).pow(2).mean()
         else:
             return self.manifold.dist(samples, mu_expanded).pow(2).mean()
         
@@ -405,8 +456,8 @@ class ManifoldMetricHandler:
             # ADDED: curvature normalisation.
             # Vector fields scale with R. Squared error scales with R^2.
             # Multiply by |K| (which is 1/R^2) to normalize.
-            if self.cross_curvature and self.kappa != 0:
-                loss = loss * abs(self.kappa)
+            # if self.cross_curvature and self.kappa != 0:
+            #     loss = loss * abs(self.kappa)
 
         n_pred = self._norm(v_pred, x_t).unsqueeze(-1)
         n_target = self._norm(v_target, x_t).unsqueeze(-1)
@@ -548,110 +599,7 @@ class ManifoldMetricHandler:
         mean_start = self.calculate_volume_scaling_mean(start_samples)
         mean_target = self.calculate_volume_scaling_mean(target_samples)
         return mean_target - mean_start
-
-
-    def calculate_all(self, pred, target, mode = "sample", step = 0, x_t = None, start = None):
-        results = {}
-
-        if mode == "vector":
-            assert x_t is not None, "x_t required for RFM metric"
-
-            error, align = self.calculate_rfm_loss(pred, target, x_t)
-            norm_stats = self.calculate_vector_norm_stats(pred, x_t)
-            tangent_stats = self.calculate_tangency_violation(x_t, pred)
-
-            results["val_vec/rfm_loss"] = error
-            results["val_vec/alignment"] = align
-            results["val_vec/finite_fraction"] = self.finite_fraction(pred)
-            results["val_vec/norm_mean"] = norm_stats["mean"]
-            results["val_vec/norm_max"] = norm_stats["max"]
-            results["val_vec/norm_std"] = norm_stats["std"]
-            results["val_vec/norm_p95"] = norm_stats["p95"]
-            results["val_vec/tangency_violation_abs"] = tangent_stats["absolute"]
-            results["val_vec/tangency_violation_rel"] = tangent_stats["relative"]
-
-        elif mode == "sample":
-            if self.active_metrics.get("sinkhorn_knopp", False):
-                results["val_sample/sinkhorn_knopp"] = self.calculate_sinkhorn_divergence(
-                    pred, target
-                )
-            if self.active_metrics.get("mmd", False):
-                results["val_sample/mmd"] = self.calculate_mmd(pred, target)
-
-            if self.active_metrics.get("epsilon_coverage", False):
-                results["val_sample/epsilon_coverage"] = (
-                    self.calculate_epsilon_coverage(pred, target)
-                )
-
-            if self.active_metrics.get("epsilon_precision", False):
-                results["val_sample/epsilon_precision"] = (
-                    self.calculate_epsilon_precision(pred, target)
-                )
-
-            if self.active_metrics.get("frechet_variance", False):
-                frechet_pred = self.calculate_frechet_variance(pred)
-                frechet_target = self.calculate_frechet_variance(target)
-
-                results["val_sample/frechet_variance_pred"] = frechet_pred
-                results["val_sample/frechet_variance_target"] = frechet_target
-                results["val_sample/frechet_variance_ratio"] = (
-                    frechet_pred / torch.clamp(frechet_target, min=1e-8)
-                )
-
-            if self.active_metrics.get("dispersion", False):
-                disp_pred = self.calculate_dispersion(pred)
-                disp_target = self.calculate_dispersion(target)
-
-                results["val_sample/dispersion_predicted"] = disp_pred
-                results["val_sample/dispersion_target"] = disp_target
-                results["val_sample/dispersion_ratio"] = disp_pred / torch.clamp(
-                    disp_target, min=1e-8
-                )
-
-            if "volume_scaling" in self.active_metrics:
-                mean_pred = self.calculate_volume_scaling_mean(pred)
-                mean_target = self.calculate_volume_scaling_mean(target)
-
-                var_pred = self.calculate_volume_scaling_variance(pred)
-                var_target = self.calculate_volume_scaling_variance(target)
-
-                results["val_sample/volume_scaling_mean_pred"] = mean_pred
-                results["val_sample/volume_scaling_mean_target"] = mean_target
-                results["val_sample/volume_scaling_variance_pred"] = var_pred
-                results["val_sample/volume_scaling_variance_target"] = var_target
-                                        # to see whether experienced volume growth differs between gt and pred
-                results["val_sample/volume_scaling_gap_target_minus_pred"] = mean_target - mean_pred
-
-                if start is not None:
-                    mean_start = self.calculate_volume_scaling_mean(start)
-                    var_start = self.calculate_volume_scaling_variance(start)
-                    gap_start_target = self.calculate_volume_scaling_gap(start, target)
-
-                    results["val_sample/volume_scaling_mean_start"] = mean_start
-                    results["val_sample/volume_scaling_variance_start"] = var_start
-                    results["val_sample/volume_scaling_gap_start_target"] = gap_start_target
-
-            #! Should add radial/angular decomposition here
-
-            if self.active_metrics.get("stability", False):
-                results["val_sample/finite_fraction"] = self.finite_fraction(pred)
-
-            if pred.shape == target.shape:
-                if self.m_type == "euclidean":
-                    dist_val = torch.linalg.norm(pred - target, dim = -1).mean()
-                else:
-                    if self.cross_curvature:
-                        dist_val = self.scaled_dist(pred, target).mean() #normalizing for better cross-curvature comparison
-                    else:
-                        dist_val = self.manifold.dist(pred, target).mean()
-                    
-
-                results["val_sample/geodesic_dist"] = dist_val
-            if self.metrics_params.get("save_densities", False):
-                self.save_density_state(pred, target, step)
-
-        return results
-
+    
 
     def save_density_state(
         self,
@@ -678,3 +626,113 @@ class ManifoldMetricHandler:
         }
 
         torch.save(data, f"{path}/{manifold_name}_step_{step:06d}.pt")
+
+
+    def calculate_all(self, pred, target, mode = "sample", step = 0, x_t = None, start = None):
+        results = {}
+
+        if mode == "vector":
+            assert x_t is not None, "x_t required for RFM metric"
+
+            error, align = self.calculate_rfm_loss(pred, target, x_t)
+            norm_stats = self.calculate_vector_norm_stats(pred, x_t)
+            tangent_stats = self.calculate_tangency_violation(x_t, pred)
+
+            results["val_vec/rfm_loss"] = error
+            results["val_vec/alignment"] = align
+            results["val_vec/finite_fraction"] = self.finite_fraction(pred)
+            results["val_vec/norm_mean"] = norm_stats["mean"]
+            results["val_vec/norm_max"] = norm_stats["max"]
+            results["val_vec/norm_std"] = norm_stats["std"]
+            results["val_vec/norm_p95"] = norm_stats["p95"]
+            results["val_vec/tangency_violation_abs"] = tangent_stats["absolute"]
+            results["val_vec/tangency_violation_rel"] = tangent_stats["relative"]
+
+        elif mode == "sample":
+            if self.metrics_used.get("sinkhorn_knopp", False):
+                sinkhorn_val = self.calculate_sinkhorn_divergence(pred, target)
+                results["val_sample/sinkhorn_knopp"] = sinkhorn_val
+
+            if self.metrics_used.get("tangent_sinkhorn_knopp", False):
+                tangent_sinkhorn_val = self.calculate_tangent_sinkhorn(pred, target)
+                results["val_sample/tangent_sinkhorn_knopp"] = tangent_sinkhorn_val
+                if self.metrics_used.get("sinkhorn_knopp", False):
+                    results["val_sample/tangent_to_geodesic_sinkhorn_ratio"] = (
+                        tangent_sinkhorn_val / torch.clamp(sinkhorn_val, min = 1e-8)
+                    )
+
+            if self.metrics_used.get("mmd", False):
+                results["val_sample/mmd"] = self.calculate_mmd(pred, target)
+
+            if self.metrics_used.get("epsilon_coverage", False):
+                results["val_sample/epsilon_coverage"] = (
+                    self.calculate_epsilon_coverage(pred, target)
+                )
+
+            if self.metrics_used.get("epsilon_precision", False):
+                results["val_sample/epsilon_precision"] = (
+                    self.calculate_epsilon_precision(pred, target)
+                )
+
+            if self.metrics_used.get("frechet_variance", False):
+                frechet_pred = self.calculate_frechet_variance(pred)
+                frechet_target = self.calculate_frechet_variance(target)
+
+                results["val_sample/frechet_variance_pred"] = frechet_pred
+                results["val_sample/frechet_variance_target"] = frechet_target
+                results["val_sample/frechet_variance_ratio"] = (
+                    frechet_pred / torch.clamp(frechet_target, min=1e-8)
+                )
+
+            if self.metrics_used.get("dispersion", False):
+                disp_pred = self.calculate_dispersion(pred)
+                disp_target = self.calculate_dispersion(target)
+
+                results["val_sample/dispersion_predicted"] = disp_pred
+                results["val_sample/dispersion_target"] = disp_target
+                results["val_sample/dispersion_ratio"] = disp_pred / torch.clamp(
+                    disp_target, min = 1e-8
+                )
+
+            if self.metrics_used.get("volume_scaling", False):
+                mean_pred = self.calculate_volume_scaling_mean(pred)
+                mean_target = self.calculate_volume_scaling_mean(target)
+
+                var_pred = self.calculate_volume_scaling_variance(pred)
+                var_target = self.calculate_volume_scaling_variance(target)
+
+                results["val_sample/volume_scaling_mean_pred"] = mean_pred
+                results["val_sample/volume_scaling_mean_target"] = mean_target
+                results["val_sample/volume_scaling_variance_pred"] = var_pred
+                results["val_sample/volume_scaling_variance_target"] = var_target
+                                        # to see whether experienced volume growth differs between gt and pred
+                results["val_sample/volume_scaling_gap_target_minus_pred"] = mean_target - mean_pred
+
+                if start is not None:
+                    mean_start = self.calculate_volume_scaling_mean(start)
+                    var_start = self.calculate_volume_scaling_variance(start)
+                    gap_start_target = self.calculate_volume_scaling_gap(start, target)
+
+                    results["val_sample/volume_scaling_mean_start"] = mean_start
+                    results["val_sample/volume_scaling_variance_start"] = var_start
+                    results["val_sample/volume_scaling_gap_start_target"] = gap_start_target
+
+            #! Should add radial/angular decomposition here
+
+            if self.metrics_used.get("stability", False):
+                results["val_sample/finite_fraction"] = self.finite_fraction(pred)
+
+            if pred.shape == target.shape:
+                if self.m_type == "euclidean":
+                    dist_val = torch.linalg.norm(pred - target, dim = -1).mean()
+                else:
+                    if self.cross_curvature:
+                        dist_val = self.scaled_dist(pred, target).mean() #normalizing for better cross-curvature comparison
+                    else:
+                        dist_val = self.manifold.dist(pred, target).mean()
+                results["val_sample/geodesic_dist"] = dist_val
+
+            if self.cfg.get("save_densities", False):
+                self.save_density_state(pred, target, step)
+
+        return results

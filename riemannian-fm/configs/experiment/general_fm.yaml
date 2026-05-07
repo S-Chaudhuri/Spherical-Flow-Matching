@@ -18,20 +18,22 @@ general:
 
 metrics_used:
   sinkhorn_knopp: True
+  tangent_sinkhorn_knopp: True
   mmd: True
   epsilon_coverage: True
   epsilon_precision: True
   frechet_variance: True
   dispersion: True
-  radial: True
   stability: True
   rfm: True
-  cross_curvature: False
+  volume_scaling: True
 
 metrics_param:
   sinkhorn_blur: 0.05
   coverage_eps_multiplier: 1.0
-  save_densities: False
+  normalize_tangent_sinkhorn: true
+
+save_densities: False
 
 model:
   d_model: 512
