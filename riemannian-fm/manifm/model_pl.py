@@ -441,6 +441,8 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         # define a function to plot the geodesics
         def plot_geodesic(gv):
+            if torch.is_tensor(gv):
+                gv = gv.detach().cpu()
             ax.plot(*gv.t().numpy(), STYLE, color=COLOR, linewidth=LINE_WIDTH)
 
         # define geodesic directions
@@ -485,7 +487,8 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         x0 = batch["x0"]
         x1 = batch["x1"]
-        trajs = self.sample_all(x1.shape, device=x1.device, x0=x0)
+        # for SphereCurvature with ambient dimension 2, points lie on S^1 (a circle in R^2).
+        trajs = self.sample_all(x1.shape[0], device=x1.device, x0=x0)
         samples = trajs[-1]
 
         c = getattr(self.manifold, "c", 1.0)
@@ -493,36 +496,48 @@ class ManifoldFMLitModule(pl.LightningModule):
             c = c.item()
         R = 1.0 / np.sqrt(c) if c > 0 else 1.0
 
-        def project(tensor):
-            x, y, z = tensor[..., 0], tensor[..., 1], tensor[..., 2]
-            denom = R - z + 1e-7
-            return torch.stack([R * x / denom, R * y / denom], dim=-1)
-
-        x0_2d = project(x0).cpu().numpy()
-        samples_2d = project(samples).cpu().numpy()
-        trajs_2d = project(trajs).cpu().numpy()
+        # convert to numpy for plotting
+        x0_np = x0.detach().cpu().numpy()
+        samples_np = samples.detach().cpu().numpy()
+        trajs_np = trajs.detach().cpu().numpy()
 
         plt.figure(figsize=(8, 8))
         ax = plt.gca()
 
-        equator = plt.Circle((0, 0), R, color="black", fill=False, linestyle='--', alpha=0.5)
-        ax.add_artist(equator)
+        # draw the reference circle
+        theta = np.linspace(0, 2 * np.pi, 400)
+        circle_x = R * np.cos(theta)
+        circle_y = R * np.sin(theta)
+        ax.plot(circle_x, circle_y, color="black", linestyle="--", alpha=0.5, linewidth=1.0)
 
-        self.add_geodesic_grid(ax, self.manifold, line_width=0.2)
+        # plot trajectories
+        for i in range(min(100, trajs_np.shape[1])):
+            ax.plot(
+                trajs_np[:, i, 0],
+                trajs_np[:, i, 1],
+                color="grey",
+                alpha=0.3,
+                linewidth=0.5,
+            )
 
-        for i in range(min(100, trajs_2d.shape[1])):
-            ax.plot(trajs_2d[:, i, 0], trajs_2d[:, i, 1], color="grey", alpha=0.3, linewidth=0.5)
+        ax.scatter(x0_np[:, 0], x0_np[:, 1], s=5, color="red")
+        ax.scatter(samples_np[:, 0], samples_np[:, 1], s=5, color="blue")
 
-        plt.scatter(x0_2d[:, 0], x0_2d[:, 1], s=5, color="red")
-        plt.scatter(samples_2d[:, 0], samples_2d[:, 1], s=5, color="blue")
-
-        plt.xlim([-3 * R, 3 * R])
-        plt.ylim([-3 * R, 3 * R])
-        ax.set_aspect('equal')
-        plt.axis("off")
+        lim = 1.25 * R
+        ax.set_xlim([-lim, lim])
+        ax.set_ylim([-lim, lim])
+        ax.set_aspect("equal")
+        ax.axis("off")
         plt.savefig(f"figs/sphere2d-{self.global_step:06d}.png")
         plt.close()
 
+    def to_numpy(self, x):
+            if x is None:
+                return None
+            if torch.is_tensor(x):
+                return x.detach().cpu().numpy()
+            return np.asarray(x)
+        
     def plot_euclidean(self, batch, dim):
         os.makedirs("figs", exist_ok=True)
 
@@ -539,6 +554,9 @@ class ManifoldFMLitModule(pl.LightningModule):
             samples = self.sample(x1.shape[0], device=x1.device)
 
         data = x1 if x1 is not None else x0
+    
+        samples = self.to_numpy(samples)
+        data = self.to_numpy(data)
 
         if dim == 2:
             plt.figure(figsize=(6, 6))

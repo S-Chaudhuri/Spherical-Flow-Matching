@@ -718,7 +718,7 @@ def get_loaders(cfg):
 def get_manifold(cfg):
     dataset, _ = _get_dataset(cfg)
 
-    if isinstance(dataset, MeshDataset) or isinstance(dataset, MeshDatasetPair):
+    if isinstance(dataset, MeshDataset): #or isinstance(dataset, MeshDatasetPair):
         manifold = dataset.manifold(
             numeigs=cfg.mesh.numeigs, metric=Metric(cfg.mesh.metric), temp=cfg.mesh.temp
         )
