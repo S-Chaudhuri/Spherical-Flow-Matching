@@ -18,25 +18,41 @@ class ManifoldMetricHandler:
         gcfg = cfg.get("general", None)
         self.gcfg = gcfg
 
-        self.active_metrics = cfg.get(  # choose metrics
-            "metrics_used", None
+        self.active_metrics = cfg.get(  # choose the metrics to actively track
+            "metrics_to_use",
+            [
+                "sinkhorn_knopp",
+                "mmd",
+                "epsilon_coverage",
+                "epsilon_precision",
+                "frechet_variance",
+                "dispersion",
+                "radial",
+                "stability",
+                "rfm",
+                "volume_scaling",
+            ],
         )
         self.metrics_params = cfg.get("metrics_param", None)  # parameters for metrics, e.g. blur for Sinkhorn-Knopp
-        self.cross_curvature = self.active_metrics.get("cross_curvature", False)  # whether to normalize metrics for better cross-curvature comparison
+        self.cross_curvature = cfg.get("cross_curvature", False)  # whether to normalize metrics for better cross-curvature comparison
+
         self.m_type = gcfg.get("manifold", "euclidean").lower()
+        self.dim = int(gcfg.get("dim"))
         self.curvature = gcfg.get("curvature", 1.0)
-        self.origin = gcfg.get(
-            "origin", None)  #! How to define the origin in the first place?
+                                        # origin is North pole for spherical,
+                                        # plain origin for Euclidean and hyperbolic
+        self.origin = gcfg.get("origin", None)
 
         if self.m_type == "euclidean":
             self.manifold = Euclidean()
-            self.kappa = 0.0  # flat geometry
+            self.kappa = 0.0            # flat
         elif self.m_type == "sphere":
-            self.manifold = SphereCurvature(c=self.curvature)
-            self.kappa = self.curvature  # positive curvature (spherical)
+            self.manifold = SphereCurvature(c = self.curvature)
+            self.kappa = self.curvature # positive curvature (spherical)
         elif self.m_type == "poincare":
-            self.manifold = PoincareBall(c=self.curvature)
-            self.kappa = -self.curvature  # negative curvature (hyperbolic)
+            self.manifold = PoincareBall(c = self.curvature)
+                                        # negative curvature (hyperbolic)
+            self.kappa = -self.curvature
         else:
             raise ValueError(f"unsupported manifold: {self.m_type}")
 
@@ -82,14 +98,6 @@ class ManifoldMetricHandler:
             d = d * scale
 
         return d
-    
-
-    def radial_values(self, x):
-        origin = self.get_origin(x).expand_as(x)
-        if self.cross_curvature:
-            return self.scaled_dist(origin, x)
-        else:
-            return self.manifold.dist(origin, x)
 
 
     def calculate_sinkhorn_divergence(
@@ -112,7 +120,6 @@ class ManifoldMetricHandler:
         """
         
         if blur is None:
-            #! Blur should also be normalized across curvatures! Take this into account
             blur = self.metrics_params.get("sinkhorn_blur", 0.05)
 
         # REMOVED: blur = blur * (abs(self.kappa) ** 0.5) 
@@ -148,9 +155,6 @@ class ManifoldMetricHandler:
             val = solver(x_gen, x_real)
 
         val = torch.clamp(val, min=0.0) ** (1.0 / p)
-        #! TODO: How to normalize Wasserstein/Sinkhorn-Knopp across curvatures?
-        #! Add an if-s with boolean normalize parameter
-        #! Also add it to the calculate_all() function below once chosen
         return val
 
     #! Add decomposed Sinkhorn Knopp for radial and angular
@@ -465,9 +469,88 @@ class ManifoldMetricHandler:
         )
 
         return kld
+    
+
+    def intrinsic_dim(self):
+        """ intrinsic dim of manifold, i.e. just - 1;
+        needed because for the sphere implementation,
+        the coordinates are ambient instead of intrinsic,
+        whereas for the geometric theory, we need intrinsic """
+        if self.m_type == "sphere":
+            return self.dim - 1         # since spherical impl. is in ambient space
+        return self.dim
+    
+
+    def radial_geodesic_distance(self, x):
+        """ geodesic radius from origin, elementwise """
+        origin = self.get_origin(x).expand_as(x)
+        if self.m_type == "euclidean":
+            return torch.linalg.norm(x - origin, dim=-1)
+                                        # returns shape [N]
+        return self.manifold.dist(origin, x)
+    
+
+    def radial_jacobian_ratio(self, r, eps = 1e-8):
+        """ compute S_kapper(r) / r ratio:
+        - kappa > 0 : sin(sqrt(kappa) r) / (sqrt(kappa) r)
+        - kappa = 0 : 1
+        - kappa < 0 : sinh(sqrt(-kappa) r) / (sqrt(-kappa) r)
+        """
+        if self.kappa == 0:             # trivial case
+            return torch.ones_like(r)
+                                        # take the absolutus for hyperbolic case below
+        abs_kappa = torch.as_tensor(abs(self.kappa), device = r.device, dtype = r.dtype)
+        rho = torch.sqrt(abs_kappa) * r
+                                        # avoid zero-division using eps argument
+        rho_safe = torch.clamp(rho, min = eps)
+        if self.kappa > 0:              # --> spherical
+            ratio = torch.sin(rho_safe) / rho_safe
+                                        # exact limit at rho = 0
+            ratio = torch.where(rho < 1e-6, torch.ones_like(ratio), ratio)
+                                        # just for numerical safety near the antipode
+            ratio = torch.clamp(ratio, min = 0.0)
+        else:                           # --> hyperbolic
+            ratio = torch.sinh(rho_safe) / rho_safe
+                                        # exact limit at rho = 0
+            ratio = torch.where(rho < 1e-6, torch.ones_like(ratio), ratio)
+        return ratio
 
 
-    def calculate_all(self, pred, target, mode="sample", step=0, x_t=None):
+    def volume_scaling_values(self, x):
+        """ compute J_kappa(r) = (S_kappa(r) / r)^(d-1) for a point x """
+        d_intrinsic = self.intrinsic_dim()
+        exponent = d_intrinsic - 1      # this metric is intrinsic, rather than ambient
+
+                                        # if intr. dim. is 1, there are no angulardirections
+                                        # so the Jacobian factor is just 1's
+        if exponent == 0:
+            return torch.ones(x.shape[0], device = x.device, dtype = x.dtype)
+
+        r = self.radial_geodesic_distance(x)
+        ratio = self.radial_jacobian_ratio(r)
+        return ratio.pow(exponent)
+
+
+    def calculate_volume_scaling_mean(self, samples):
+        """ mean (expected) "experienced" volume scaling """
+        J = self.volume_scaling_values(samples)
+        return J.mean()
+
+
+    def calculate_volume_scaling_variance(self, samples):
+        """ variance of "experienced" volume scaling """
+        J = self.volume_scaling_values(samples)
+        return J.var(unbiased = False)
+
+
+    def calculate_volume_scaling_gap(self, start_samples, target_samples):
+        """ start-target volume-growth gap, for p0 and p1, resp. """
+        mean_start = self.calculate_volume_scaling_mean(start_samples)
+        mean_target = self.calculate_volume_scaling_mean(target_samples)
+        return mean_target - mean_start
+
+
+    def calculate_all(self, pred, target, mode = "sample", step = 0, x_t = None, start = None):
         results = {}
 
         if mode == "vector":
@@ -525,6 +608,29 @@ class ManifoldMetricHandler:
                     disp_target, min=1e-8
                 )
 
+            if "volume_scaling" in self.active_metrics:
+                mean_pred = self.calculate_volume_scaling_mean(pred)
+                mean_target = self.calculate_volume_scaling_mean(target)
+
+                var_pred = self.calculate_volume_scaling_variance(pred)
+                var_target = self.calculate_volume_scaling_variance(target)
+
+                results["val_sample/volume_scaling_mean_pred"] = mean_pred
+                results["val_sample/volume_scaling_mean_target"] = mean_target
+                results["val_sample/volume_scaling_variance_pred"] = var_pred
+                results["val_sample/volume_scaling_variance_target"] = var_target
+                                        # to see whether experienced volume growth differs between gt and pred
+                results["val_sample/volume_scaling_gap_target_minus_pred"] = mean_target - mean_pred
+
+                if start is not None:
+                    mean_start = self.calculate_volume_scaling_mean(start)
+                    var_start = self.calculate_volume_scaling_variance(start)
+                    gap_start_target = self.calculate_volume_scaling_gap(start, target)
+
+                    results["val_sample/volume_scaling_mean_start"] = mean_start
+                    results["val_sample/volume_scaling_variance_start"] = var_start
+                    results["val_sample/volume_scaling_gap_start_target"] = gap_start_target
+
             #! Should add radial/angular decomposition here
 
             if self.active_metrics.get("stability", False):
@@ -532,7 +638,7 @@ class ManifoldMetricHandler:
 
             if pred.shape == target.shape:
                 if self.m_type == "euclidean":
-                    dist_val = torch.linalg.norm(pred - target, dim=-1).mean()
+                    dist_val = torch.linalg.norm(pred - target, dim = -1).mean()
                 else:
                     if self.cross_curvature:
                         dist_val = self.scaled_dist(pred, target).mean() #normalizing for better cross-curvature comparison

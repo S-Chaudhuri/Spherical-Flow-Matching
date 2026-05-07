@@ -97,7 +97,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         self._final_eval_path = os.path.join("artifacts", "final_fixed_eval_outputs.pt")
         
         self.metric_handler = None
-        if cfg.get("general", None) is not None and cfg.get("metrics_used", None) is not None:
+        if cfg.get("general", None) is not None:
             self.metric_handler = ManifoldMetricHandler(cfg)
 
     @property
@@ -1009,6 +1009,7 @@ class ManifoldFMLitModule(pl.LightningModule):
     def on_test_epoch_start(self):
         self._test_sample_pred = []
         self._test_sample_target = []
+        self._test_sample_start = []
 
     def test_step(self, batch: Any, batch_idx: int):
         if isinstance(batch, dict):
@@ -1054,6 +1055,8 @@ class ManifoldFMLitModule(pl.LightningModule):
 
             self._test_sample_pred.append(x1_hat.detach().cpu())
             self._test_sample_target.append(x1.detach().cpu())
+            if x0 is not None:
+                self._test_sample_start.append(x0.detach().cpu())
             
         return {"loss": loss}
 
@@ -1062,16 +1065,33 @@ class ManifoldFMLitModule(pl.LightningModule):
             x1_hat_all = torch.cat(self._test_sample_pred, dim=0).to(self.device)
             x1_all = torch.cat(self._test_sample_target, dim=0).to(self.device)
 
+            x0_all = None
+            if hasattr(self, "_test_sample_start") and len(self._test_sample_start) > 0:
+                x0_all = torch.cat(self._test_sample_start, dim=0).to(self.device)
+
             with torch.no_grad():
                 sample_metrics = self.metric_handler.calculate_all(
-                    x1_hat_all, x1_all, mode="sample", step=int(self.global_step)
+                    x1_hat_all,
+                    x1_all,
+                    mode = "sample",
+                    step = int(self.global_step),
+                    start = x0_all
                 )
-
-            sample_metrics = {k.replace("val_sample/", "test_sample/"): v for k, v in sample_metrics.items()}
-            self.log_dict(sample_metrics, on_step=False, on_epoch=True, batch_size=x1_all.shape[0], sync_dist=True)
+            sample_metrics = {
+                k.replace("val_sample/", "test_sample/"): v
+                for k, v in sample_metrics.items()
+            }
+            self.log_dict(
+                sample_metrics,
+                on_step = False,
+                on_epoch = True,
+                batch_size = x1_all.shape[0],
+                sync_dist = True
+            )
 
         self._test_sample_pred = []
         self._test_sample_target = []
+        self._test_sample_start = []
         self.test_metric.reset()
 
     def configure_optimizers(self):

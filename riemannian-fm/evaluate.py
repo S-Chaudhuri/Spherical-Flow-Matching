@@ -8,7 +8,6 @@ import pytorch_lightning as pl
 from manifm.datasets import get_loaders
 from manifm.eval_utils import load_model
 from manifm.model_pl import ManifoldFMLitModule
-from 
 
 
 @click.group()
