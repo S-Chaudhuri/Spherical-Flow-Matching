@@ -258,11 +258,32 @@ class SphereCurvature(Manifold):
         z = std * z
         return self.expmap(mean, z)
     
+    # code for tangent normalization
+    # def wrapped_normal(self, dim, mean, std, std_mode="intrinsic"):
+    #     z = torch.randn_like(mean)
+    #     z = self.proju(mean, z)
+
+    #     if std_mode == "intrinsic":
+    #         effective_std = std
+
+    #     elif std_mode == "curvature_normalized":
+    #         effective_std = std * self.radius
+
+    #     else:
+    #         raise ValueError(f"Unknown std_mode: {std_mode}")
+
+    #     z = effective_std * z
+
+    #     return self.expmap(mean, z)
+
+
     # def transp(self, x, y, v):
     #     denom = 1 + self.inner(x, x, y, keepdim=True)
     #     res = v - self.inner(x, y, v, keepdim=True) / denom * (x + y)
     #     cond = denom.gt(1e-3)
     #     return torch.where(cond, res, -v)
+
+
 
     def transp(self, x: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         # Parallel transport on a sphere of radius R
