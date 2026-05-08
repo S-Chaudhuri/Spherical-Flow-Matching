@@ -1,9 +1,183 @@
+from __future__ import annotations
+
 import os
 import argparse
+import json
+import glob
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+from omegaconf import OmegaConf
 
+
+BASE_DIR = Path(__file__).resolve().parent
+
+def get_metrics(run_dir, run_glob, out_dir, default_metrics=None):
+    run_dirs = collect_run_dirs(run_dir, run_glob)
+
+    if not run_dirs:
+        raise ValueError('No runs specified. Fill RUN_DIRS and/or RUN_GLOBS in the cell above.')
+
+    out_dir = Path(out_dir).expanduser()
+    if not out_dir.is_absolute():
+        out_dir = (BASE_DIR / out_dir).resolve()
+
+    metrics_list = {}
+    
+    
+    for i, run_dir in enumerate(run_dirs, start=1):
+        # print('\n' + '=' * 100)
+        # print(f'[{i}/{len(run_dirs)}] Run: {run_dir}')
+        
+        # metadata from run (manifold, curvature, dimension)
+        meta = load_general_from_hydra(run_dir)
+
+        paths = resolve_run_paths(run_dir)
+
+        missing = []
+        if not paths.run_dir.exists():
+            missing.append(f'missing run dir: {paths.run_dir}')
+        if not paths.artifacts_pt.exists():
+            missing.append(f'missing artifacts file: {paths.artifacts_pt}')
+        if not paths.metrics_json.exists():
+            missing.append(f'missing metrics file: {paths.metrics_json}')
+
+        if missing:
+            print('SKIP (missing files):')
+            for m in missing:
+                print(f'  - {m}')
+            continue
+
+        # --- Metrics ---
+        # print('\nMetrics:')
+        metrics = load_metrics(paths.metrics_json, meta)
+        # print_metrics(metrics, key_subset=default_metrics)
+
+        # --- Plot ---
+        label = safe_run_label(paths.run_dir)
+        out_file = out_dir / f'{label}_analysis.pdf'
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # print(f'\nGenerating plot -> {out_file}')
+        visualize_pt_file(paths.artifacts_pt, run_dir=paths.run_dir, meta=meta, save_path=out_file)
+        metrics_list[label] = metrics
+    return metrics_list
+
+def find_visualize_script(start_dir: str | Path) -> Path:
+    """Locate visualize_run.py starting from a directory, searching up the tree.
+
+    This is mainly useful in notebooks/environments where the working directory
+    may differ from the directory containing this file.
+    """
+
+    start_dir_path = Path(start_dir).expanduser().resolve()
+    for base in [start_dir_path, *start_dir_path.parents]:
+        direct = base / "visualize_run.py"
+        in_results = base / "results" / "visualize_run.py"
+        if direct.exists():
+            return direct
+        if in_results.exists():
+            return in_results
+
+    raise FileNotFoundError(
+        "Could not locate visualize_run.py from the provided start directory. "
+        "Try opening/running from riemannian-fm/results/."
+    )
+
+
+@dataclass(frozen=True)
+class RunPaths:
+    run_dir: Path
+    artifacts_pt: Path
+    metrics_json: Path
+
+
+def resolve_run_paths(run_dir: str | Path, base_dir: Path | None = None) -> RunPaths:
+    """Resolve a run directory into expected artifact/metric paths."""
+
+    base_dir = base_dir or BASE_DIR
+    run_dir_path = Path(run_dir).expanduser()
+    if not run_dir_path.is_absolute():
+        run_dir_path = base_dir / run_dir_path
+    run_dir_path = run_dir_path.resolve()
+
+    artifacts_pt = run_dir_path / "artifacts" / "final_fixed_eval_outputs.pt"
+    metrics_json = run_dir_path / "metrics.json"
+    return RunPaths(run_dir=run_dir_path, artifacts_pt=artifacts_pt, metrics_json=metrics_json)
+
+
+def collect_run_dirs(
+    run_dirs: list[str | Path],
+    run_globs: list[str],
+    base_dir: Path | None = None,
+) -> list[Path]:
+    """Collect run directories from explicit paths and/or glob patterns."""
+
+    base_dir = base_dir or BASE_DIR
+    collected: list[Path] = []
+
+    for rd in run_dirs:
+        collected.append(Path(rd).expanduser())
+
+    for pattern in run_globs:
+        # Globs are interpreted relative to base_dir unless absolute.
+        if Path(pattern).is_absolute():
+            matches = [Path(p) for p in glob.glob(pattern)]
+        else:
+            matches = list(base_dir.glob(pattern))
+        collected.extend(sorted(matches))
+
+    # Deduplicate while preserving order
+    seen: set[Path] = set()
+    unique: list[Path] = []
+    for p in collected:
+        if p not in seen:
+            unique.append(p)
+            seen.add(p)
+
+    return unique
+
+
+def safe_run_label(run_dir: str | Path) -> str:
+    """Build a short label for filenames (e.g. baseline__poi_d3_c1)."""
+
+    run_dir_path = Path(run_dir)
+    parts = [run_dir_path.parent.name, run_dir_path.name]
+    label = "__".join([p for p in parts if p])
+    return label or run_dir_path.name
+
+
+def load_metrics(metrics_path: str | Path, meta: dict) -> dict:
+    metrics_path = Path(metrics_path).expanduser().resolve()
+    with metrics_path.open("r", encoding="utf-8") as f:
+        metrics = json.load(f)
+    # Merge metadata into metrics
+    for k, v in meta.items():
+        metrics[f"{k}"] = v
+    return metrics
+
+
+def print_metrics(metrics: dict, key_subset: list[str] | None = None) -> None:
+    if key_subset is not None and key_subset != []:
+        print("Key metrics:")
+        for k, v in metrics.items():
+            if k in key_subset:
+                print(f"  {k}: {v}")
+    else:
+        print("\nAll metrics (sorted):")
+        for k in sorted(metrics.keys()):
+            print(f"  {k}: {metrics[k]}")
+
+
+def load_general_from_hydra(run_dir: str | Path) -> dict:
+    run_dir = Path(run_dir).expanduser().resolve()
+    cfg_path = run_dir / ".hydra" / "config.yaml"
+    cfg = OmegaConf.load(str(cfg_path))
+    general = cfg.get("general")
+    return OmegaConf.to_container(general, resolve=True) if general is not None else {}
 
 def extract_data(data):
     """Safely extract and convert PyTorch tensors to numpy arrays."""
@@ -324,44 +498,58 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
         plt.show()
 
 
+def visualize_pt_file(pt_file: str | Path, run_dir: str | Path, meta: dict, save_path: str | Path | None = None) -> dict:
+    """Load a saved eval .pt file and generate the appropriate plot.
+    """
+
+    pt_path = Path(pt_file).expanduser().resolve()
+    if not pt_path.exists():
+        raise FileNotFoundError(f"Eval outputs not found: {pt_path}")
+
+    raw_data = torch.load(pt_path, map_location="cpu", weights_only=True)
+    data = extract_data(raw_data)
+
+    manifold_type = meta.get("manifold", "").lower()
+    dim = data["x0"].shape[1]
+
+    save_path_str = str(Path(save_path)) if save_path is not None else None
+
+    if "poincare" in manifold_type:
+        #print(f"Detected Poincaré manifold (Dim={dim}). Plotting in the hyperbolic disk...")
+        plot_poincare(data, meta, save_path_str)
+    elif "sphere" in manifold_type:
+        if dim == 2:
+            #print(f"Detected Spherical manifold (Dim={dim}). Plotting 2D circle...")
+            plot_sphere_2d(data, meta, save_path_str)
+        else:
+            #print(f"Detected Spherical manifold (Dim={dim}). Plotting 3D wireframe sphere...")
+            plot_sphere_3d(data, meta, save_path_str)
+    else:
+        #print(f"Defaulting to Euclidean flat space plotting (Dim={dim})...")
+        plot_euclidean(data, meta, save_path_str)
+
+    return meta
+
+
 def main():
     # fmt: off
     parser = argparse.ArgumentParser(description="Visualize Geometric Flow Matching Results")
     parser.add_argument("--file", "-f", required=True, help="Path to the .pt file")
+    parser.add_argument("--run-dir", "-r", required=True, help="Path to the run directory")
     parser.add_argument("--save", "-s", action="store_true", help="Save the plot to a file")
     parser.add_argument("--out", "-o", default=".results/images/run_analysis.png", help="Output filename if saving")
 
     args = parser.parse_args()
+    meta = load_general_from_hydra(args.run_dir)
     # fmt: on
 
     if not os.path.exists(args.file):
         print(f"Error: File '{args.file}' not found.")
         return
 
-    print(f"Loading data from {args.file}...")
-    raw_data = torch.load(args.file, map_location="cpu", weights_only=True)
-    meta = raw_data.get("meta", {})
-    data = extract_data(raw_data)
-
-    # Route to the correct geometric plotting function
-    manifold_type = meta.get("manifold_type", "").lower()
-    dim = data["x0"].shape[1]
-
     save_path = args.out if args.save else None
-
-    if "poincare" in manifold_type:
-        print(f"Detected Poincaré manifold (Dim={dim}). Plotting in the hyperbolic disk...")
-        plot_poincare(data, meta, save_path)
-    elif "sphere" in manifold_type:
-        if dim == 2:
-            print(f"Detected Spherical manifold (Dim={dim}). Plotting 2D circle...")
-            plot_sphere_2d(data, meta, save_path)
-        else:
-            print(f"Detected Spherical manifold (Dim={dim}). Plotting 3D wireframe sphere...")
-            plot_sphere_3d(data, meta, save_path)
-    else:
-        print(f"Defaulting to Euclidean flat space plotting (Dim={dim})...")
-        plot_euclidean(data, meta, save_path)
+    print(f"Loading data from {args.file}...")
+    visualize_pt_file(args.file, args.run_dir, meta=meta, save_path=save_path)
 
 
 if __name__ == "__main__":
