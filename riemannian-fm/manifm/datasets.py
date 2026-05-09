@@ -275,6 +275,17 @@ class CheckerboardDataset(Dataset):
 
         return self.manifold.expmap0(tangent.unsqueeze(0)).squeeze(0)
     
+    def _wrap_euclidean(self, xy):
+        if self.dim == 2:
+            return xy
+        elif self.dim > 2:
+            point = torch.zeros(self.dim)
+            point[0] = xy[0]
+            point[1] = xy[1]
+            return point
+        else:
+            raise ValueError(f"checkerboard on euclidean requires dim>=2, got {self.dim}")
+    
     def __getitem__(self, idx):
         xy = self._checkerboard2d()
 
@@ -282,6 +293,8 @@ class CheckerboardDataset(Dataset):
             x1 = self._wrap_sphere(xy)
         elif self.manifold_name == "poincare":
             x1 = self._wrap_poincare(xy)
+        elif self.manifold_name == "euclidean":
+            x1 = self._wrap_euclidean(xy)
         else:
             raise ValueError(f"unknown manifold: {self.manifold_name}")
         
@@ -564,6 +577,8 @@ class GeneralDataset(Dataset):
                 return self._checkerboard._wrap_sphere(self._checkerboard._checkerboard2d())
             elif self.manifold_name == "poincare":
                 return self._checkerboard._wrap_poincare(self._checkerboard._checkerboard2d())
+            elif self.manifold_name == "euclidean":
+                return self._checkerboard._wrap_euclidean(self._checkerboard._checkerboard2d())
             else:
                 raise ValueError(f"checkerboard not supported for manifold '{self.manifold_name}'")
 
@@ -840,6 +855,13 @@ def _get_dataset(cfg):
                 dim=int(cfg.general.dim),
                 n_samples=int(cfg.general.n_samples),
                 tangent_scale=cfg.general.get("checkerboard_tangent_scale", 0.7)
+         )
+    elif cfg.data == "checkerboard_euclidean":
+       dataset = CheckerboardDataset(
+                manifold=Euclidean(),
+                manifold_name="euclidean",
+                dim=int(cfg.general.dim),
+                n_samples=int(cfg.general.n_samples)
          )
     elif cfg.data == "general_fm":
         dataset = GeneralDataset(cfg)
