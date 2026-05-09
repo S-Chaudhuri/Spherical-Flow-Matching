@@ -363,6 +363,17 @@ class GeneralDataset(Dataset):
         else:
             raise ValueError("unknown manifold")
         
+        self._checkerboard = None
+        if self._dist_key(self.x1_dist) == "checkerboard" or self._dist_key(self.x0_dist) == "checkerboard":
+            self._checkerboard = CheckerboardDataset(
+                manifold=self.manifold,
+                manifold_name=self.manifold_name,
+                dim=self.dim,
+                n_samples=self.n_samples,
+                num_square=int(self.gcfg.get("checkerboard_num_square", 4)),
+                tangent_scale=float(self.gcfg.get("checkerboard_tangent_scale", 0.7)),
+            )
+            
         self.reference_origin = self.get_reference_origin()
 
         if self.save_artifacts:
@@ -547,10 +558,12 @@ class GeneralDataset(Dataset):
                 sample = self.manifold.wrapped_normal(self.dim, mean = m, std = s)
             return sample
         elif dist_key == "checkerboard":
+            if self._checkerboard is None:
+                raise RuntimeError("CheckerboardDataset not initialized")
             if self.manifold_name == "sphere":
-                return self._wrap_sphere(self._checkerboard2d())
+                return self._checkerboard._wrap_sphere(self._checkerboard._checkerboard2d())
             elif self.manifold_name == "poincare":
-                return self._wrap_poincare(self._checkerboard2d())
+                return self._checkerboard._wrap_poincare(self._checkerboard._checkerboard2d())
             else:
                 raise ValueError(f"checkerboard not supported for manifold '{self.manifold_name}'")
 
