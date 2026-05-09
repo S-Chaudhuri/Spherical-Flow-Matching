@@ -7,7 +7,7 @@ general:
   curvature: 1.0
   dim: 3
   x0_dist: gaussian
-  x1_dist: mog
+  x1_dist: MoG
   n_samples: 20000
   std_x0: 0.7
   mean_x0: [0.0, 0.0, 0.0]

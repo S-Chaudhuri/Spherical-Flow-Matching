@@ -167,7 +167,7 @@ def main():
             "curvature": args.curvature,
             "dim": args.dim,
             "x0_dist": args.x0_dist,
-            "x1_dist": "mog",  # Forcing this to Mixture of Gaussians
+            "x1_dist": "MoG",  # Forcing this to Mixture of Gaussians
             "n_samples": args.n_samples,
             "std_x0": args.std_x0,
             "mean_x0": args.mean_x0,
