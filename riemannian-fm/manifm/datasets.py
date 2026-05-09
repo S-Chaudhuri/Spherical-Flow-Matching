@@ -211,6 +211,82 @@ class HyperbolicUniformToGaussian(Dataset):
         return {"x0": x0, "x1": x1}
 
 
+class CheckerboardDataset(Dataset):
+    """
+    defines the checkerboard distribution on the square [-1,1]^2, on the black squares.
+    """
+    def __init__(self, manifold, manifold_name,dim,n_samples=20000, num_square=4, tangent_scale=0.7):
+        self.manifold = manifold
+        self.manifold_name = manifold_name
+        self.dim = dim
+        self.n_samples = n_samples
+        self.num_square = num_square
+        self.tangent_scale = tangent_scale
+
+    def __len__(self):
+        return self.n_samples
+    
+    def _checkerboard2d(self):
+
+        x = torch.rand(1, 2) * self.num_square
+
+        cell_x = torch.floor(x[:, 0]).to(torch.int)
+        cell_y = torch.floor(x[:,1]).to(torch.int)
+        is_white = ((cell_x + cell_y) % 2 == 0)
+
+        can_shift_right = (cell_x < self.num_square - 1)
+        x[:,0] = x[:,0] + (is_white & can_shift_right).float()
+        can_shift_down = (cell_y < self.num_square - 1)
+        x[:,1] = x[:,1] + (is_white & ~can_shift_right & can_shift_down).float()
+        
+        is_corner = is_white & ~can_shift_right & ~can_shift_down
+        x[:,0] = x[:,0] - (self.num_square -1) * is_corner.float()
+
+        return (x / self.num_square * 2 -1).float().squeeze(0)
+    
+    def _wrap_sphere(self, xy):
+        lat = xy[0] * (torch.pi / 2)
+        lon = xy[1] * (torch.pi)
+
+        if self.dim == 3:
+            point = torch.stack([
+                torch.cos(lat) * torch.cos(lon),
+                torch.cos(lat) * torch.sin(lon),
+                torch.sin(lat),
+            ])
+        elif self.dim ==2:
+            point = torch.stack([torch.cos(lon), torch.sin(lon)])
+        else:
+            # raise ValueError(f"checkerboard on sphere not implemented for dim={self.dim}")
+            # I am implementing for more dimensions but the prefered diminsions are 2 and 3)
+            point = torch.zeros(self.dim)
+            point[0] = torch.cos(lat) * torch.cos(lon)
+            point[1] = torch.cos(lat) * torch.sin(lon)
+            point[2] = torch.sin(lat)
+
+        point = point * self.manifold.radius
+        return self.manifold.projx(point.unsqueeze(0)).squeeze(0)
+    
+    def _wrap_poincare(self, xy):
+        tangent = xy * self.tangent_scale
+
+        if self.dim >2:
+            tangent = torch.cat([tangent, torch.zeros(self.dim -2)])
+
+        return self.manifold.expmap0(tangent.unsqueeze(0)).squeeze(0)
+    
+    def __getitem__(self, idx):
+        xy = self._checkerboard2d()
+
+        if self.manifold_name == "sphere":
+            x1 = self._wrap_sphere(xy)
+        elif self.manifold_name == "poincare":
+            x1 = self._wrap_poincare(xy)
+        else:
+            raise ValueError(f"unknown manifold: {self.manifold_name}")
+        
+        return x1
+
 
 class Wrapped(Dataset):
     def __init__(
@@ -470,6 +546,13 @@ class GeneralDataset(Dataset):
             else:
                 sample = self.manifold.wrapped_normal(self.dim, mean = m, std = s)
             return sample
+        elif dist_key == "checkerboard":
+            if self.manifold_name == "sphere":
+                return self._wrap_sphere(self._checkerboard2d())
+            elif self.manifold_name == "poincare":
+                return self._wrap_poincare(self._checkerboard2d())
+            else:
+                raise ValueError(f"checkerboard not supported for manifold '{self.manifold_name}'")
 
         else:
             raise ValueError(f"Unknown distribution: {dist_name}")
@@ -730,6 +813,21 @@ def _get_dataset(cfg):
         dataset = HyperbolicUniformToGaussian()
     elif cfg.data == "euclidean":
         dataset = EuclideanImages(cfg.get("euclidean_datadir"))
+    elif cfg.data == "checkerboard_sphere":
+       dataset = CheckerboardDataset(
+            manifold=SphereCurvature(c=float(cfg.general.curvature)),
+            manifold_name="sphere",
+            dim=int(cfg.general.dim),
+            n_samples=int(cfg.general.n_samples)
+       )
+    elif cfg.data == "checkerboard_poincare":
+       dataset = CheckerboardDataset(
+                manifold=PoincareBall(c=float(cfg.general.curvature)),
+                manifold_name="poincare",
+                dim=int(cfg.general.dim),
+                n_samples=int(cfg.general.n_samples),
+                tangent_scale=cfg.general.get("checkerboard_tangent_scale", 0.7)
+         )
     elif cfg.data == "general_fm":
         dataset = GeneralDataset(cfg)
 
