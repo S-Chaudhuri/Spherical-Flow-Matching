@@ -285,7 +285,9 @@ class GeneralDataset(Dataset):
         elif self.manifold_name == "euclidean":
             self.manifold = Euclidean()
         else:
-            raise ValueError("Unknown manifold")
+            raise ValueError("unknown manifold")
+        
+        self.reference_origin = self.get_reference_origin()
 
         if self.save_artifacts:
             self._load_or_create_fixed_dataset()
@@ -334,61 +336,140 @@ class GeneralDataset(Dataset):
 
         else:
             raise ValueError(f"Unknown manifold: {manifold}")
+
+
+    def _to_tensor(self, x):
+        if x is None:
+            return None
+        if torch.is_tensor(x):
+            return x.detach().clone().float()
+        return torch.tensor(x, dtype = torch.float32)
+
+
+    def _dist_key(self, dist_name):
+        if dist_name is None:
+            return None
+        return str(dist_name).lower()
+
+
+    def get_reference_origin(self):
+        """
+        Fixed origin used for geodesic dilation:
+        - custom general.origin if provided
+        - otherwise zero for euclidean / poincare
+        - north pole for sphere
+        """
+        origin = self.gcfg.get("origin", None)
+        if origin is not None:
+            origin = self._to_tensor(origin)
+        elif self.manifold_name in ["euclidean", "poincare"]:
+            origin = torch.zeros(self.dim, dtype = torch.float32)
+        elif self.manifold_name == "sphere":
+            origin = torch.zeros(self.dim, dtype = torch.float32)
+            origin[0] = np.sqrt(1.0 / self.curvature)
+        else:
+            raise ValueError(f"unknown manifold: {self.manifold_name}")
+
+        self.check_mean(origin, self.manifold_name)
+        return origin
+
+
+    def tangent_scale_factor(self):
+        """
+        Deterministic curvature-radius normalization:
+        - euclidean: 1
+        - sphere / poincare: 1 / sqrt(curvature)
+        """
+        if not self.gcfg.get("normalize_tangent_distributions", False):
+            return 1.0
+        if self.manifold_name == "euclidean":
+            return 1.0
+        return 1.0 / np.sqrt(self.curvature)
+
+
+    def normalize_sample_by_curvature(self, x):
+        """
+        Apply post-construction geodesic dilation
+            x -> exp_o(alpha * log_o(x))
+        to a sample x or batch x
+
+        This works for any distribution, because it transforms the sampled
+        points directly rather than distribution parameters
+        """
+        alpha = self.tangent_scale_factor()
+        if alpha == 1.0:
+            return x
+
+        single = False
+        if x.ndim == 1:
+            x = x.unsqueeze(0)
+            single = True
+
+        origin = self.reference_origin.to(device = x.device, dtype = x.dtype).view(1, -1)
+        origin = origin.expand_as(x)
+
+        if self.manifold_name == "euclidean":
+            x_new = origin + alpha * (x - origin)
+        else:
+            v = self.manifold.logmap(origin, x)
+            x_new = self.manifold.expmap(origin, alpha * v)
+            if hasattr(self.manifold, "projx"):
+                x_new = self.manifold.projx(x_new)
+
+        if single:
+            return x_new.squeeze(0)
+        return x_new
+
+
+    def sample_normalized(self, dist_name, std = None, mean = None):
+        """
+        Sample from the requested distribution, then optionally apply
+        curvature-radius normalization with geodesic dilation
+        """
+        x = self.sample(dist_name, std = std, mean = mean)
+        x = self.normalize_sample_by_curvature(x)
+        return x
             
 
-    def sample(self, dist_name, std=None, mean=None):
+    def sample(self, dist_name, std = None, mean = None):
         if std is None:
             std = 1.0
-
         if mean is not None and not torch.is_tensor(mean):
-            mean = torch.tensor(mean, dtype=torch.float32)
+            mean = torch.tensor(mean, dtype = torch.float32)
 
+        dist_key = self._dist_key(dist_name)
         self.check_mean(mean, self.manifold_name)
-        # --- UNIFORM ---
-        if dist_name == "uniform":
-            raise NotImplementedError("Uniform sampling not implemented yet")
 
-        # --- EUCLIDEAN NORMAL ---
-        elif dist_name == "normal":
+        if dist_key == "uniform":
+            raise NotImplementedError("uniform sampling not implemented yet")
+        elif dist_key == "normal":
             raise NotImplementedError("Euclidean normal not implemented yet")
-
-        # --- RIEMANNIAN GAUSSIAN ---
-        elif dist_name == "gaussian":
+        elif dist_key == "gaussian":
             if self.manifold_name == "euclidean":
-                sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
+                sample = self.manifold.random_normal(self.dim, mean = mean, std = std)
             else:
-                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
+                sample = self.manifold.wrapped_normal(self.dim, mean = mean, std = std)
             return sample
-        
-        # --- MIXTURE OF GAUSSIANS ---
-        # Define stds and means as list of lists. For example:
-        # std = [[0.1, 0.1], [0.2, 0.2]]
-        # mean = [[0.1, 0.1], [0.9, 0.9]]
-
-        elif dist_name == "MoG":
+        elif dist_key == "mog":
             K = len(std)
 
             weights_cfg = self.gcfg.get("weights", None)
             if weights_cfg is None:
                 weights = torch.ones(K) / K
             else:
-                weights = torch.tensor(weights_cfg)
+                weights = torch.tensor(weights_cfg, dtype = torch.float32)
                 weights = weights / weights.sum()
 
-            # Sample one component
             k = torch.multinomial(weights, 1).item()
 
             m = mean[k]
             s = std[k]
 
             if self.manifold_name == "euclidean":
-                sample = self.manifold.random_normal(self.dim, mean=m, std=s)
+                sample = self.manifold.random_normal(self.dim, mean = m, std = s)
             else:
-                sample = self.manifold.wrapped_normal(self.dim, mean=m, std=s)
-
+                sample = self.manifold.wrapped_normal(self.dim, mean = m, std = s)
             return sample
-
-
 
         else:
             raise ValueError(f"Unknown distribution: {dist_name}")
@@ -400,8 +481,8 @@ class GeneralDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.x0_all is None or self.x1_all is None:
-            x0 = self.sample(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
-            x1 = self.sample(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
+            x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0)
+            x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1)
             return {"x0": x0, "x1": x1}
 
         x0 = self.x0_all[idx]
@@ -447,6 +528,8 @@ class GeneralDataset(Dataset):
             "std_x1": _to_python(self.std_x1),
             "mean_x0": _to_python(self.mean_x0),
             "mean_x1": _to_python(self.mean_x1),
+            "origin": _to_python(self.reference_origin),
+            "normalize_tangent_distributions": bool(self.gcfg.get("normalize_tangent_distributions", False)),
             "eval_t_values": (
                 None if self.eval_t_values is None else _to_python(self.eval_t_values)
             ),
@@ -506,8 +589,8 @@ class GeneralDataset(Dataset):
             x0_all = []
             x1_all = []
             for _ in range(self.n_samples):
-                x0 = self.sample(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
-                x1 = self.sample(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
+                x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0)
+                x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1)
 
                 x0_all.append(x0.detach().cpu())
                 x1_all.append(x1.detach().cpu())
