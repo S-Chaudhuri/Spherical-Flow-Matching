@@ -272,8 +272,7 @@ def main():
         yaml_str = yaml_str.replace(f"\n{section}", f"\n\n{comment}\n{section}")
 
     # Save to the configs/experiment directory
-    os.makedirs("configs/experiment", exist_ok=True)
-    filepath = os.path.join("configs/experiment", args.filename)
+    filepath = os.path.join("./riemannian-fm/configs/experiment/", args.filename)
 
     with open(filepath, "w") as f:
         # Add the required Hydra header
