@@ -2,7 +2,6 @@ import argparse
 import json
 import math
 import os
-import random
 
 import yaml
 
@@ -23,13 +22,13 @@ def parse_args():
     general_group.add_argument("--mean_x0", type=float, nargs='+', default=[0.0, 0.0, 0.0], help="Mean of x0")
     general_group.add_argument("--origin", type=float, nargs='+', default=None, help="Origin point on the manifold (default: null)")
 
-    # --- MoG Topology Arguments ---
-    mog_group = parser.add_argument_group("Mixture of Gaussians Topology")
-    mog_group.add_argument("--counts", type=int, nargs='+', required=True, help="List of integers: Number of Gaussians at each level (e.g., --counts 3 2)")
-    mog_group.add_argument("--radii", type=float, nargs='+', required=True, help="List of floats: Geodesic distance (radius) for each level (e.g., --radii 1.5 3.0)")
-    mog_group.add_argument("--stds", type=str, nargs='+', required=True, help="List of strings: Standard deviations per level. Use '0.1' for isotropic or '0.1,0.2,0.1' for anisotropic.")
-    mog_group.add_argument("--weights", type=float, nargs='+', required=True, help="List of floats: Base importance weight for the Gaussians at each level.")
-    mog_group.add_argument("--overrides", type=str, default="{}", help="JSON string to override specific Gaussians. Format: '{\"L0_G1\": {\"weight\": 2.0, \"std\": [0.5, 0.5, 0.0]}}'")
+    # --- Explicit MoG Arguments ---
+    mog_group = parser.add_argument_group("Explicit Mixture of Gaussians Parameters")
+    mog_group.add_argument("--radii", type=float, nargs='+', required=True, help="List of floats: Geodesic distances for each Gaussian from the origin.")
+    mog_group.add_argument("--angles", type=float, nargs='+', required=True, help="List of floats: Angles in degrees relative to the horizontal axis for each Gaussian.")
+    mog_group.add_argument("--stds", type=str, nargs='+', required=True, help="List of strings: Standard deviations per Gaussian. Use '0.1' for isotropic or '0.1,0.2,0.1' for anisotropic.")
+    mog_group.add_argument("--weights", type=float, nargs='+', required=True, help="List of floats: Base importance weight for each Gaussian.")
+    mog_group.add_argument("--overrides", type=str, default="{}", help="JSON string to override specific Gaussians. Format: '{\"G1\": {\"weight\": 2.0, \"std\": [0.5, 0.5, 0.0]}}'")
 
     # --- Metrics Used (Toggles) ---
     metrics_group = parser.add_argument_group("Metrics Used Settings")
@@ -79,14 +78,13 @@ def parse_args():
     eval_group.add_argument("--eval_t_values", type=float, nargs='+', default=[0.0, 0.25, 0.5, 0.75, 1.0], help="List of ODE integration timesteps to evaluate/log")
 
     return parser.parse_args()
-    # fmt: off
+    # fmt: on
 
 
 def parse_std_string(std_str, dim):
-    """Converts a CLI string like '0.1' or '0.1, 0.2' into a list of length 'dim'."""
+    """Converts a CLI string like '0.1' or '0.1,0.2' into a list of length 'dim'."""
 
     parts = [float(x) for x in std_str.split(",")]
-
     if len(parts) == 1:
         return parts * dim  # Broadcast isotropic to all dims
 
@@ -98,7 +96,7 @@ def parse_std_string(std_str, dim):
 
 
 def generate_mog_parameters(args):
-    """Calculates the means, stds, and weights for the MoG based on tangent space geometry."""
+    """Calculates the explicit means, stds, and weights for the MoG in the tangent space."""
 
     all_means = []
     all_stds = []
@@ -106,47 +104,57 @@ def generate_mog_parameters(args):
 
     overrides = json.loads(args.overrides)
 
-    if not (len(args.counts) == len(args.radii) == len(args.stds) == len(args.weights)):
-        error_msg = "The number of arguments provided to --counts, --radii, --stds, and --weights must be identical."
-        raise ValueError(error_msg)
-
-    for level_idx, (count, radius, std_str, level_weight) in enumerate(
-        zip(args.counts, args.radii, args.stds, args.weights)
+    # Validate that all explicit MoG lists are of the same length
+    num_gaussians = len(args.radii)
+    if not (
+        len(args.angles) == num_gaussians
+        and len(args.stds) == num_gaussians
+        and len(args.weights) == num_gaussians
     ):
-        # Initialisation of the first Gaussian of this level
-        phase = 0
-        angle_step = (2 * math.pi) / count
+        msg = "The number of arguments provided to --radii, --angles, --stds, and --weights must be identical."
+        raise ValueError(msg)
+
+    for g_idx in range(num_gaussians):
+        identifier = f"G{g_idx}"
+
+        radius = args.radii[g_idx]
+        angle_deg = args.angles[g_idx]
+        std_str = args.stds[g_idx]
+        weight = args.weights[g_idx]
 
         base_std = parse_std_string(std_str, args.dim)
 
-        for g_idx in range(count):
-            identifier = f"L{level_idx}_G{g_idx}"
+        # 1. Calculate Mean in Tangent Space
+        # Convert user-provided degrees to radians
+        angle_rad = math.radians(angle_deg)
+        x = radius * math.cos(angle_rad)
+        y = radius * math.sin(angle_rad)
 
-            # 1. Calculate Mean (assuming points are distributed on the 2D xy-plane of the tangent space)
-            angle = phase + (g_idx * angle_step)
-            x = radius * math.cos(angle)
-            y = radius * math.sin(angle)
-
-            # Pad with zeros if dimensionality is > 2
+        # Pad with zeros if dimensionality > 2. This embeds the points in the 2D xy-plane.
+        if args.dim >= 2:
             mean = [round(x, 4), round(y, 4)] + [0.0] * (args.dim - 2)
 
-            # 2. Check for Specific Overrides
-            std = base_std
-            weight = level_weight
+        else:
+            mean = [round(x, 4)]  # Edge case for 1D
 
-            if identifier in overrides:
-                if "weight" in overrides[identifier]:
-                    weight = overrides[identifier]["weight"]
+        # 2. Check for Specific Overrides
+        std = base_std
+        if identifier in overrides:
+            if "weight" in overrides[identifier]:
+                weight = overrides[identifier]["weight"]
 
-                if "std" in overrides[identifier]:
-                    std = overrides[identifier]["std"]
+            if "std" in overrides[identifier]:
+                std = overrides[identifier]["std"]
 
-            all_means.append(mean)
-            all_stds.append(std)
-            all_weights.append(weight)
+        all_means.append(mean)
+        all_stds.append(std)
+        all_weights.append(weight)
 
-    # Normalize weights to sum to 1.0 (standard for MoG)
+    # Normalize weights to sum to 1.0 (standard requirement for a valid MoG)
     total_weight = sum(all_weights)
+    if total_weight == 0:
+        raise ValueError("Total weight of Gaussians cannot be zero.")
+
     all_weights = [round(w / total_weight, 4) for w in all_weights]
 
     return all_means, all_stds, all_weights
@@ -222,9 +230,17 @@ def main():
     yaml_str = yaml.dump(config, sort_keys=False, default_flow_style=None)
 
     # 2. Inject blank lines before major blocks to stop it from looking crammed
-    sections_to_space = ["general:", "model:", "optim:", "val_every:"]
-    for section in sections_to_space:
-        yaml_str = yaml_str.replace(f"\n{section}", f"\n\n{section}")
+    sections_to_space = ["general:", "metrics_used:model:", "optim:", "val_every:"]
+    comments_to_add = [
+        "# --- Explicit MoG Arguments ---",
+        "# --- Metrics Parameters ---",
+        "# --- Flow Matching Model Settings ---",
+        "# --- Optimizer Settings ---",
+        "# --- Evaluation & Logging Settings ---",
+    ]
+
+    for comment, section in zip(comments_to_add, sections_to_space):
+        yaml_str = yaml_str.replace(f"\n{section}", f"\n\n{comment}\n{section}")
 
     # Save to the configs/experiment directory
     os.makedirs("configs/experiment", exist_ok=True)
