@@ -10,15 +10,19 @@ general:
   x1_dist: gaussian
   n_samples: 20000
   std_x0: 0.7
-  std_x1: 0.7
-  mean_x0: [0.0, 0.0, 0.0]
-  mean_x1: [0.8, 0.0, 0.0]
-  weights: null # for mixture of gaussians, define as list: [0.5, 0.5]
+  std_x1: 0.7                           # set null for checkerboard
+  mean_x0: [0.0, 0.0, 0.0]              
+  mean_x1: [0.8, 0.0, 0.0]              # set null for checkerboard
+  weights: null                         # for mixture of gaussians, define as list: [0.5, 0.5]
   origin: null 
                                         # if true, rescale all sampled x0/x1 points by
                                         # x -> exp_o((1/sqrt(curvature)) * log_o(x))
                                         # around the fixed origin o; this works for any distribution
   normalize_tangent_distributions: false
+
+checkerboard:
+  num_square: 4
+  tangent_scale: 1.0
 
 metrics_used:
   sinkhorn_knopp: True
@@ -62,5 +66,5 @@ local_coords: False
 normalize_loglik: False
 visualize: True
 
-eval_n_pairs: 2000 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same 100 pairs
+eval_n_pairs: 2000 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same n pairs
 eval_t_values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
