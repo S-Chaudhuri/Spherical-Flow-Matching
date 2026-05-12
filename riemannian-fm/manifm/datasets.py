@@ -383,8 +383,8 @@ class GeneralDataset(Dataset):
                 manifold_name=self.manifold_name,
                 dim=self.dim,
                 n_samples=self.n_samples,
-                num_square=int(self.gcfg.get("checkerboard_num_square", 4)),
-                tangent_scale=float(self.gcfg.get("checkerboard_tangent_scale", 0.7)),
+                num_square=int(self.cfg.get("checkerboard").get("num_square", None)),
+                tangent_scale=float(self.cfg.get("checkerboard").get("tangent_scale", None))
             )
             
         self.reference_origin = self.get_reference_origin()
