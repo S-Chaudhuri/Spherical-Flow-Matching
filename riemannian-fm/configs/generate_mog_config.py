@@ -24,8 +24,10 @@ def parse_args():
 
     # --- Explicit MoG Arguments ---
     mog_group = parser.add_argument_group("Explicit Mixture of Gaussians Parameters")
-    mog_group.add_argument("--radii", type=float, nargs='+', required=True, help="List of floats: Geodesic distances for each Gaussian from the origin.")
-    mog_group.add_argument("--angles", type=float, nargs='+', required=True, help="List of floats: Angles in degrees relative to the horizontal axis for each Gaussian.")
+    mog_group.add_argument("--radii", type=float, nargs='+', default=None, help="List of floats: Geodesic distances for each Gaussian from the origin. (Polar Mode)")
+    mog_group.add_argument("--angles", type=float, nargs='+', default=None, help="List of floats: Angles in degrees relative to the horizontal axis. (Polar Mode)")
+    mog_group.add_argument("--cartesian_means", type=str, default=None, help="JSON string: Direct Cartesian coordinates in the tangent space. Bypasses radii/angles. Format: '[[1.0, 0.0, 0.0], [-1.0, 0.5, 0.0]]' (Cartesian Mode)")
+
     mog_group.add_argument("--stds", type=str, nargs='+', required=True, help="List of strings: Standard deviations per Gaussian. Use '0.1' for isotropic or '0.1,0.2,0.1' for anisotropic.")
     mog_group.add_argument("--weights", type=float, nargs='+', required=True, help="List of floats: Base importance weight for each Gaussian.")
     mog_group.add_argument("--overrides", type=str, default="{}", help="JSON string to override specific Gaussians. Format: '{\"G1\": {\"weight\": 2.0, \"std\": [0.5, 0.5, 0.0]}}'")
@@ -104,40 +106,67 @@ def generate_mog_parameters(args):
 
     overrides = json.loads(args.overrides)
 
-    # Validate that all explicit MoG lists are of the same length
-    num_gaussians = len(args.radii)
-    if not (
-        len(args.angles) == num_gaussians
-        and len(args.stds) == num_gaussians
-        and len(args.weights) == num_gaussians
-    ):
-        msg = "The number of arguments provided to --radii, --angles, --stds, and --weights must be identical."
+    # --- Determine Mode & Extract Initial Means ---
+    is_cartesian = args.cartesian_means is not None
+
+    if is_cartesian:
+        if args.radii is not None or args.angles is not None:
+            raise ValueError("You cannot provide --radii or --angles when using --cartesian_means.")
+
+        raw_means = json.loads(args.cartesian_means)
+        num_gaussians = len(raw_means)
+
+        if not isinstance(raw_means, list) or (
+            num_gaussians > 0 and not isinstance(raw_means[0], list)
+        ):
+            msg = "--cartesian_means must be a JSON string of nested lists. E.g., '[[1.0, 0.0], [-1.0, 0.0]]'"
+            raise ValueError(msg)
+
+    else:
+        if args.radii is None or args.angles is None:
+            msg = "You must provide EITHER --cartesian_means OR both --radii and --angles."
+            raise ValueError(msg)
+
+        num_gaussians = len(args.radii)
+        if len(args.angles) != num_gaussians:
+            msg = "The number of arguments provided to --radii and --angles must be identical."
+            raise ValueError(msg)
+
+        # Calculate Cartesian from Polar
+        raw_means = []
+        for r, angle_deg in zip(args.radii, args.angles):
+            angle_rad = math.radians(angle_deg)
+            x = r * math.cos(angle_rad)
+            y = r * math.sin(angle_rad)
+            raw_means.append([x, y])
+
+    # Validate stds and weights count
+    if not (len(args.stds) == num_gaussians and len(args.weights) == num_gaussians):
+        msg = f"Length mismatch: Expected {num_gaussians} stds and weights to match the defined means."
         raise ValueError(msg)
 
+    # --- Process and Pad Means, Process Stds/Weights ---
     for g_idx in range(num_gaussians):
         identifier = f"G{g_idx}"
 
-        radius = args.radii[g_idx]
-        angle_deg = args.angles[g_idx]
+        mean_vector = raw_means[g_idx]
         std_str = args.stds[g_idx]
         weight = args.weights[g_idx]
 
+        # Pad or Truncate Mean Vector based on dimensionality
+        if len(mean_vector) < args.dim:
+            mean_vector.extend([0.0] * (args.dim - len(mean_vector)))
+
+        elif len(mean_vector) > args.dim:
+            msg = f"Gaussian G{g_idx} mean {mean_vector} has more dimensions than the specified manifold dim ({args.dim})."
+            raise ValueError(msg)
+
+        # Round the mean vector for clean YAML output
+        final_mean = [round(m, 4) for m in mean_vector]
+
         base_std = parse_std_string(std_str, args.dim)
 
-        # 1. Calculate Mean in Tangent Space
-        # Convert user-provided degrees to radians
-        angle_rad = math.radians(angle_deg)
-        x = radius * math.cos(angle_rad)
-        y = radius * math.sin(angle_rad)
-
-        # Pad with zeros if dimensionality > 2. This embeds the points in the 2D xy-plane.
-        if args.dim >= 2:
-            mean = [round(x, 4), round(y, 4)] + [0.0] * (args.dim - 2)
-
-        else:
-            mean = [round(x, 4)]  # Edge case for 1D
-
-        # 2. Check for Specific Overrides
+        # Apply Overrides
         std = base_std
         if identifier in overrides:
             if "weight" in overrides[identifier]:
@@ -146,11 +175,11 @@ def generate_mog_parameters(args):
             if "std" in overrides[identifier]:
                 std = overrides[identifier]["std"]
 
-        all_means.append(mean)
+        all_means.append(final_mean)
         all_stds.append(std)
         all_weights.append(weight)
 
-    # Normalize weights to sum to 1.0 (standard requirement for a valid MoG)
+    # Normalize weights to sum to 1.0
     total_weight = sum(all_weights)
     if total_weight == 0:
         raise ValueError("Total weight of Gaussians cannot be zero.")
