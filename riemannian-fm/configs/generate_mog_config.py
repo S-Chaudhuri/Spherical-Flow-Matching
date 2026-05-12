@@ -21,6 +21,7 @@ def parse_args():
     general_group.add_argument("--std_x0", type=float, default=0.7, help="Standard deviation of x0")
     general_group.add_argument("--mean_x0", type=float, nargs='+', default=[0.0, 0.0, 0.0], help="Mean of x0")
     general_group.add_argument("--origin", type=float, nargs='+', default=None, help="Origin point on the manifold (default: null)")
+    general_group.add_argument("--normalize_tangent_distributions", action="store_true", help="Whether to normalize the tangent distribution for curvature.")
 
     # --- Explicit MoG Arguments ---
     mog_group = parser.add_argument_group("Explicit Mixture of Gaussians Parameters")
@@ -35,6 +36,7 @@ def parse_args():
     # --- Metrics Used (Toggles) ---
     metrics_group = parser.add_argument_group("Metrics Used Settings")
     metrics_group.add_argument("--no_sinkhorn_knopp", action="store_false", dest="sinkhorn_knopp", help="Disable Sinkhorn-Knopp metric")
+    metrics_group.add_argument("--tangent_sinkhorn_knopp", action="store_false", help="...")
     metrics_group.add_argument("--no_mmd", action="store_false", dest="mmd", help="Disable MMD metric")
     metrics_group.add_argument("--no_epsilon_coverage", action="store_false", dest="epsilon_coverage", help="Disable Epsilon Coverage metric")
     metrics_group.add_argument("--no_epsilon_precision", action="store_false", dest="epsilon_precision", help="Disable Epsilon Precision metric")
@@ -43,12 +45,14 @@ def parse_args():
     metrics_group.add_argument("--no_radial", action="store_false", dest="radial", help="Disable Radial metric")
     metrics_group.add_argument("--no_stability", action="store_false", dest="stability", help="Disable Stability metric")
     metrics_group.add_argument("--no_rfm", action="store_false", dest="rfm", help="Disable RFM metric")
+    metrics_group.add_argument("--volume_scaling", action="store_false", help="...")
     metrics_group.add_argument("--cross_curvature", action="store_true", dest="cross_curvature", help="Enable Cross-Curvature metric")
 
     # --- Metrics Parameters ---
     metrics_param_group = parser.add_argument_group("Metrics Parameters")
     metrics_param_group.add_argument("--sinkhorn_blur", type=float, default=0.05, help="Sinkhorn blur parameter")
     metrics_param_group.add_argument("--coverage_eps_multiplier", type=float, default=1.0, help="Coverage epsilon multiplier")
+    metrics_param_group.add_argument("--normalize_tangent_sinkhorn", action="store_false", help="Whether to normalize the Sinkhorn metric for curvature.")
     metrics_param_group.add_argument("--save_densities", action="store_true", help="Enable saving densities (sets save_densities: True)")
 
     # --- Model Settings ---
@@ -71,6 +75,7 @@ def parse_args():
     # --- Evaluation & Logging Settings ---
     eval_group = parser.add_argument_group("Evaluation & Logging settings")
     eval_group.add_argument("--val_every", type=int, default=500, help="Frequency of validation steps")
+    eval_group.add_argument("--early_stopping_patience", type=int, default=1000, help="Early stopping step parameter.")
     eval_group.add_argument("--div_mode", type=str, default="rademacher", help="Divergence estimation mode")
     eval_group.add_argument("--eval_projx", action="store_true", help="Enable projection during evaluation (sets eval_projx: True)")
     eval_group.add_argument("--local_coords", action="store_true", help="Use local coordinates (sets local_coords: True)")
@@ -211,9 +216,12 @@ def main():
             "std_x1": stds,
             "mean_x1": means,
             "weights": weights,
+            "origin": args.origin,
+            "normalize_tangent_distributions": args.normalize_tangent_distributions,
         },
         "metrics_used": {
             "sinkhorn_knopp": args.sinkhorn_knopp,
+            "tangent_sinkhorn_knopp": args.tangent_sinkhorn_knopp,
             "mmd": args.mmd,
             "epsilon_coverage": args.epsilon_coverage,
             "epsilon_precision": args.epsilon_precision,
@@ -223,12 +231,14 @@ def main():
             "stability": args.stability,
             "rfm": args.rfm,
             "cross_curvature": args.cross_curvature,
+            "volume_scaling": args.volume_scaling,
         },
         "metrics_param": {
             "sinkhorn_blur": args.sinkhorn_blur,
             "coverage_eps_multiplier": args.coverage_eps_multiplier,
-            "save_densities": args.save_densities,
+            "normalize_tangent_sinkhorn": args.normalize_tangent_sinkhorn,
         },
+        "save_densities": args.save_densities,
         "model": {
             "d_model": args.d_model,
             "num_layers": args.num_layers,
@@ -245,6 +255,7 @@ def main():
             "lr": args.lr,
         },
         "val_every": args.val_every,
+        "early_stopping_patience": args.early_stopping_patience,
         "div_mode": args.div_mode,
         "eval_projx": args.eval_projx,
         "local_coords": args.local_coords,
@@ -285,6 +296,23 @@ def main():
     print(f"  Means: {means[:2]} ...")
     print(f"  Stds:  {stds[:2]} ...")
     print(f"  Weights: {weights}")
+
+    # # Print job file spec
+    # with open("./riemannian-fm/configs/experiment/general_fm.yaml", "r") as fo:
+    #     general_fm = yaml.safe_load(fo)
+
+    # print("srun python train.py experiment=general_fm seed=34 \\")
+    # print("\thydra.run.dir=outputs/runs/baseline/NAME \\")
+    # for k, v in general_fm.items():
+    #     if not isinstance(v, dict):
+    #         if config[k] != v:
+    #             print(f"\t{k}={v} \\")
+    #         continue
+
+    #     # print(k, v)
+    #     for k2, v2 in v.items():
+    #         if config[k][k2] != v2:
+    #             print(f"\t{k}.{k2}={v2} \\")
 
 
 if __name__ == "__main__":
