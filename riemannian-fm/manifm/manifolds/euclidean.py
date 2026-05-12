@@ -41,6 +41,18 @@ class Euclidean(geoopt_Euclidean):
             scale=std
         )
         return dist.log_prob(x).sum(dim=-1)
+    
+    def random_gaussian_ring(self, dim, mean, std, radius):
+        direction = torch.randn(dim)
+        direction = direction / (direction.norm() + 1e-8)
+
+        radial_noise = torch.randn(1) * std + mean
+        r = radius + radial_noise
+
+        sample = r * direction
+
+        return sample
+
 
     
 

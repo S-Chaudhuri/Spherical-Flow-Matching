@@ -268,6 +268,8 @@ class GeneralDataset(Dataset):
         self.std_x1 = gcfg.get("std_x1", None)
         self.mean_x0 = gcfg.get("mean_x0", None)
         self.mean_x1 = gcfg.get("mean_x1", None)
+        self.radius_x0 = gcfg.get("radius_x0", None)    # radius for Gaussian ring
+        self.radius_x1 = gcfg.get("radius_x1", None)    # radius for Gaussian ring
 
         # saving configuration for evalutaion
         self.eval_n_pairs = int(cfg.get("eval_n_pairs", 100))
@@ -421,17 +423,17 @@ class GeneralDataset(Dataset):
         return x_new
 
 
-    def sample_normalized(self, dist_name, std = None, mean = None):
+    def sample_normalized(self, dist_name, std = None, mean = None, radius = None):
         """
         Sample from the requested distribution, then optionally apply
         curvature-radius normalization with geodesic dilation
         """
-        x = self.sample(dist_name, std = std, mean = mean)
+        x = self.sample(dist_name, std = std, mean = mean, radius = radius)
         x = self.normalize_sample_by_curvature(x)
         return x
             
 
-    def sample(self, dist_name, std = None, mean = None):
+    def sample(self, dist_name, std = None, mean = None, radius = None):
         if std is None:
             std = 1.0
         if mean is not None and not torch.is_tensor(mean):
@@ -450,6 +452,11 @@ class GeneralDataset(Dataset):
             else:
                 sample = self.manifold.wrapped_normal(self.dim, mean = mean, std = std)
             return sample
+        elif dist_key == "gaussian-ring":
+            if self.manifold_name == "euclidean":
+                sample = self.manifold.random_gaussian_ring(self.dim, mean = mean, std = std, radius = radius)
+            else: 
+                sample = self.manifold.wrapped_gaussian_ring(self.dim, mean = mean, std = std, radius = radius)
         elif dist_key == "mog":
             K = len(std)
 
@@ -481,8 +488,8 @@ class GeneralDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.x0_all is None or self.x1_all is None:
-            x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0)
-            x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1)
+            x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0, radius = self.radius_x0)
+            x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1, radius = self.radius_x1)
             return {"x0": x0, "x1": x1}
 
         x0 = self.x0_all[idx]
