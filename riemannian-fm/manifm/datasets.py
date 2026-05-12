@@ -16,9 +16,6 @@ from manifm.utils import cartesian_from_latlon
 from manifm.manifolds.poincare import PoincareBallManifold
 
 
-
-
-
 def load_csv(filename):
     file = open(filename, "r")
     lines = reader(file)
@@ -52,7 +49,7 @@ class MeshDataset(Dataset):
 class HyperbolicDatasetPair(Dataset):
     manifold = PoincareBall()
     dim = 2
-    #dim = 8
+    # dim = 8
 
     def __init__(self, distance=0.6, std=0.7):
         self.distance = distance
@@ -62,23 +59,21 @@ class HyperbolicDatasetPair(Dataset):
         return 20000
 
     def __getitem__(self, idx):
-        #sign0 = (torch.rand(1) > 0.5).float() * 2 - 1
-        #sign1 = (torch.rand(1) > 0.5).float() * 2 - 1
+        # sign0 = (torch.rand(1) > 0.5).float() * 2 - 1
+        # sign1 = (torch.rand(1) > 0.5).float() * 2 - 1
 
-        #mean0 = torch.tensor([self.distance, self.distance]) #* sign0
-        mean0 = torch.tensor([0.0,0.0])
-        #mean1 = torch.tensor([-self.distance, self.distance]) * sign1
+        # mean0 = torch.tensor([self.distance, self.distance]) #* sign0
+        mean0 = torch.tensor([0.0, 0.0])
+        # mean1 = torch.tensor([-self.distance, self.distance]) * sign1
         mean1 = torch.tensor([-self.distance, -self.distance])
 
         x0 = PoincareBall().wrapped_normal(2, mean=mean0, std=self.std)
         x1 = PoincareBall().wrapped_normal(2, mean=mean1, std=self.std)
-        
 
         return {"x0": x0, "x1": x1}
-    
 
 
-#Old hyperbolic images class, before it was matching from uniform random noise to images
+# Old hyperbolic images class, before it was matching from uniform random noise to images
 class HyperbolicImages(Dataset):
     dim = 512
 
@@ -94,7 +89,7 @@ class HyperbolicImages(Dataset):
             pair_mode:
                 "self" → x0 is tangent noise, x1 is embedding
                 "paired" → sample two different classes
-                "none" → return only x1 
+                "none" → return only x1
         """
         self.emb = torch.tensor(torch.load(emb_path)).float()
 
@@ -114,8 +109,7 @@ class HyperbolicImages(Dataset):
 
     def __len__(self):
         return len(self.emb)
-    
-    
+
     def __getitem__(self, idx, dim=512):
 
         x1 = self.emb[idx].reshape(-1)
@@ -125,8 +119,8 @@ class HyperbolicImages(Dataset):
 
         if self.pair_mode == "self":
             # Uniform distribution from VRFM
-            #x0 = 2*torch.rand(dim) - 1
-            #x0 = PoincareBallManifold().wrap(x0)
+            # x0 = 2*torch.rand(dim) - 1
+            # x0 = PoincareBallManifold().wrap(x0)
             x0 = self.manifold.wrapped_normal(self.dim, mean=torch.zeros(self.dim), std=0.3)
             return {"x0": x0, "x1": x1}
 
@@ -138,7 +132,7 @@ class HyperbolicImages(Dataset):
 
 
 class EuclideanImages(Dataset):
-    dim = 9216 #512x18
+    dim = 9216  # 512x18
 
     """
     Dataset for real Euclidean embeddings.
@@ -152,7 +146,7 @@ class EuclideanImages(Dataset):
             pair_mode:
                 "self" → x0 is tangent noise, x1 is embedding
                 "paired" → sample two different classes
-                "none" → return only x1 
+                "none" → return only x1
         """
         self.emb = torch.tensor(torch.load(emb_path)).float()
 
@@ -169,23 +163,22 @@ class EuclideanImages(Dataset):
 
     def __len__(self):
         return len(self.emb)
-    
-    
+
     def __getitem__(self, idx, dim=512):
 
         x1 = self.emb[idx]
         x0 = self.manifold.random_normal(self.dim, mean=torch.zeros(self.dim), std=1.0)
         return {"x0": x0, "x1": x1}
-            
+
 
 class HyperbolicUniformToGaussian(Dataset):
     """
     Synthetic dataset for learning a flow from
     Uniform(Poincaré Ball) → Wrapped Gaussian(Poincaré Ball)
     """
-    
+
     def __init__(self, dim=2, mean=None, std=0.3, n_samples=20000):
-        #super().__init__()
+        # super().__init__()
         self.dim = dim
         self.n_samples = n_samples
         self.std = std
@@ -193,6 +186,7 @@ class HyperbolicUniformToGaussian(Dataset):
             mean = torch.zeros(dim)
         self.mean = mean.float()
         self._manifold = PoincareBall()
+
     @property
     def manifold(self):
         return self._manifold
@@ -204,7 +198,7 @@ class HyperbolicUniformToGaussian(Dataset):
 
         ### 1. Sample x0 ~ Uniform on ball - using VRFM implementation
         x0 = self._manifold.random_base(batch_size=1, dim=self.dim).squeeze(0)
-        device = x0.device     
+        device = x0.device
         mean = self.mean.to(device)
         ### 2. Sample x1 ~ Wrapped Normal
         x1 = self._manifold.wrapped_normal(self.dim, mean=mean, std=self.std)
@@ -215,7 +209,10 @@ class CheckerboardDataset(Dataset):
     """
     defines the checkerboard distribution on the square [-1,1]^2, on the black squares.
     """
-    def __init__(self, manifold, manifold_name,dim,n_samples=20000, num_square=4, tangent_scale=0.7):
+
+    def __init__(
+        self, manifold, manifold_name, dim, n_samples=20000, num_square=4, tangent_scale=0.7
+    ):
         self.manifold = manifold
         self.manifold_name = manifold_name
         self.dim = dim
@@ -225,36 +222,38 @@ class CheckerboardDataset(Dataset):
 
     def __len__(self):
         return self.n_samples
-    
+
     def _checkerboard2d(self):
 
         x = torch.rand(1, 2) * self.num_square
 
         cell_x = torch.floor(x[:, 0]).to(torch.int)
-        cell_y = torch.floor(x[:,1]).to(torch.int)
-        is_white = ((cell_x + cell_y) % 2 == 0)
+        cell_y = torch.floor(x[:, 1]).to(torch.int)
+        is_white = (cell_x + cell_y) % 2 == 0
 
-        can_shift_right = (cell_x < self.num_square - 1)
-        x[:,0] = x[:,0] + (is_white & can_shift_right).float()
-        can_shift_down = (cell_y < self.num_square - 1)
-        x[:,1] = x[:,1] + (is_white & ~can_shift_right & can_shift_down).float()
-        
+        can_shift_right = cell_x < self.num_square - 1
+        x[:, 0] = x[:, 0] + (is_white & can_shift_right).float()
+        can_shift_down = cell_y < self.num_square - 1
+        x[:, 1] = x[:, 1] + (is_white & ~can_shift_right & can_shift_down).float()
+
         is_corner = is_white & ~can_shift_right & ~can_shift_down
-        x[:,0] = x[:,0] - (self.num_square -1) * is_corner.float()
+        x[:, 0] = x[:, 0] - (self.num_square - 1) * is_corner.float()
 
-        return (x / self.num_square * 2 -1).float().squeeze(0)
-    
+        return (x / self.num_square * 2 - 1).float().squeeze(0)
+
     def _wrap_sphere(self, xy):
         lat = xy[0] * (torch.pi / 2)
         lon = xy[1] * (torch.pi)
 
         if self.dim == 3:
-            point = torch.stack([
-                torch.cos(lat) * torch.cos(lon),
-                torch.cos(lat) * torch.sin(lon),
-                torch.sin(lat),
-            ])
-        elif self.dim ==2:
+            point = torch.stack(
+                [
+                    torch.cos(lat) * torch.cos(lon),
+                    torch.cos(lat) * torch.sin(lon),
+                    torch.sin(lat),
+                ]
+            )
+        elif self.dim == 2:
             point = torch.stack([torch.cos(lon), torch.sin(lon)])
         else:
             # raise ValueError(f"checkerboard on sphere not implemented for dim={self.dim}")
@@ -266,15 +265,15 @@ class CheckerboardDataset(Dataset):
 
         point = point * self.manifold.radius
         return self.manifold.projx(point.unsqueeze(0)).squeeze(0)
-    
+
     def _wrap_poincare(self, xy):
         tangent = xy * self.tangent_scale
 
-        if self.dim >2:
-            tangent = torch.cat([tangent, torch.zeros(self.dim -2)])
+        if self.dim > 2:
+            tangent = torch.cat([tangent, torch.zeros(self.dim - 2)])
 
         return self.manifold.expmap0(tangent.unsqueeze(0)).squeeze(0)
-    
+
     def _wrap_euclidean(self, xy):
         if self.dim == 2:
             return xy
@@ -285,7 +284,7 @@ class CheckerboardDataset(Dataset):
             return point
         else:
             raise ValueError(f"checkerboard on euclidean requires dim>=2, got {self.dim}")
-    
+
     def __getitem__(self, idx):
         xy = self._checkerboard2d()
 
@@ -297,7 +296,7 @@ class CheckerboardDataset(Dataset):
             x1 = self._wrap_euclidean(xy)
         else:
             raise ValueError(f"unknown manifold: {self.manifold_name}")
-        
+
         return x1
 
 
@@ -343,6 +342,7 @@ class GeneralDataset(Dataset):
     where x0 and x1 are sampled from specified distributions (e.g., uniform, Gaussian).
     The possible manifolds include "sphere", "poincare", and "euclidean". The possible distributions: "gaussian".
     """
+
     def __init__(self, cfg):
         self.cfg = cfg
         gcfg = cfg.get("general", None)
@@ -375,18 +375,21 @@ class GeneralDataset(Dataset):
             self.manifold = Euclidean()
         else:
             raise ValueError("unknown manifold")
-        
+
         self._checkerboard = None
-        if self._dist_key(self.x1_dist) == "checkerboard" or self._dist_key(self.x0_dist) == "checkerboard":
+        if (
+            self._dist_key(self.x1_dist) == "checkerboard"
+            or self._dist_key(self.x0_dist) == "checkerboard"
+        ):
             self._checkerboard = CheckerboardDataset(
                 manifold=self.manifold,
                 manifold_name=self.manifold_name,
                 dim=self.dim,
                 n_samples=self.n_samples,
                 num_square=int(self.cfg.get("checkerboard").get("num_square", None)),
-                tangent_scale=float(self.cfg.get("checkerboard").get("tangent_scale", None))
+                tangent_scale=float(self.cfg.get("checkerboard").get("tangent_scale", None)),
             )
-            
+
         self.reference_origin = self.get_reference_origin()
 
         if self.save_artifacts:
@@ -397,7 +400,6 @@ class GeneralDataset(Dataset):
             self.eval_x0 = None
             self.eval_x1 = None
             self.eval_t = None
-    
 
     def check_mean(self, mean, manifold, tol=1e-5):
         """
@@ -421,14 +423,12 @@ class GeneralDataset(Dataset):
 
         if manifold == "poincare":
             if not torch.all(norms < 1.0):
-                raise ValueError(
-                    f"Poincaré mean(s) must have norm < 1. Got norms: {norms}"
-                )
+                raise ValueError(f"Poincaré mean(s) must have norm < 1. Got norms: {norms}")
 
         elif manifold == "sphere":
-            if not torch.all(torch.abs(norms - np.sqrt(1/self.curvature)) < tol):
+            if not torch.all(torch.abs(norms - np.sqrt(1 / self.curvature)) < tol):
                 raise ValueError(
-                    f"Sphere mean(s) must have norm ≈ {np.sqrt(1/self.curvature)}. Got norms: {norms}"
+                    f"Sphere mean(s) must have norm ≈ {np.sqrt(1 / self.curvature)}. Got norms: {norms}"
                 )
 
         elif manifold == "euclidean":
@@ -437,20 +437,17 @@ class GeneralDataset(Dataset):
         else:
             raise ValueError(f"Unknown manifold: {manifold}")
 
-
     def _to_tensor(self, x):
         if x is None:
             return None
         if torch.is_tensor(x):
             return x.detach().clone().float()
-        return torch.tensor(x, dtype = torch.float32)
-
+        return torch.tensor(x, dtype=torch.float32)
 
     def _dist_key(self, dist_name):
         if dist_name is None:
             return None
         return str(dist_name).lower()
-
 
     def get_reference_origin(self):
         """
@@ -463,16 +460,15 @@ class GeneralDataset(Dataset):
         if origin is not None:
             origin = self._to_tensor(origin)
         elif self.manifold_name in ["euclidean", "poincare"]:
-            origin = torch.zeros(self.dim, dtype = torch.float32)
+            origin = torch.zeros(self.dim, dtype=torch.float32)
         elif self.manifold_name == "sphere":
-            origin = torch.zeros(self.dim, dtype = torch.float32)
+            origin = torch.zeros(self.dim, dtype=torch.float32)
             origin[0] = np.sqrt(1.0 / self.curvature)
         else:
             raise ValueError(f"unknown manifold: {self.manifold_name}")
 
         self.check_mean(origin, self.manifold_name)
         return origin
-
 
     def tangent_scale_factor(self):
         """
@@ -485,7 +481,6 @@ class GeneralDataset(Dataset):
         if self.manifold_name == "euclidean":
             return 1.0
         return 1.0 / np.sqrt(self.curvature)
-
 
     def normalize_sample_by_curvature(self, x):
         """
@@ -505,7 +500,7 @@ class GeneralDataset(Dataset):
             x = x.unsqueeze(0)
             single = True
 
-        origin = self.reference_origin.to(device = x.device, dtype = x.dtype).view(1, -1)
+        origin = self.reference_origin.to(device=x.device, dtype=x.dtype).view(1, -1)
         origin = origin.expand_as(x)
 
         if self.manifold_name == "euclidean":
@@ -520,22 +515,24 @@ class GeneralDataset(Dataset):
             return x_new.squeeze(0)
         return x_new
 
-
-    def sample_normalized(self, dist_name, std = None, mean = None):
+    def sample_normalized(self, dist_name, std=None, mean=None):
         """
         Sample from the requested distribution, then optionally apply
         curvature-radius normalization with geodesic dilation
         """
-        x = self.sample(dist_name, std = std, mean = mean)
+        x = self.sample(dist_name, std=std, mean=mean)
         x = self.normalize_sample_by_curvature(x)
         return x
-            
 
-    def sample(self, dist_name, std = None, mean = None):
+    def sample(self, dist_name, std=None, mean=None):
         if std is None:
             std = 1.0
+
+        elif not torch.is_tensor(std) and not isinstance(std, (float, int)):
+            std = torch.tensor(std, dtype=torch.float32)
+
         if mean is not None and not torch.is_tensor(mean):
-            mean = torch.tensor(mean, dtype = torch.float32)
+            mean = torch.tensor(mean, dtype=torch.float32)
 
         dist_key = self._dist_key(dist_name)
         self.check_mean(mean, self.manifold_name)
@@ -546,9 +543,9 @@ class GeneralDataset(Dataset):
             raise NotImplementedError("Euclidean normal not implemented yet")
         elif dist_key == "gaussian":
             if self.manifold_name == "euclidean":
-                sample = self.manifold.random_normal(self.dim, mean = mean, std = std)
+                sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
             else:
-                sample = self.manifold.wrapped_normal(self.dim, mean = mean, std = std)
+                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
             return sample
         elif dist_key == "mog":
             K = len(std)
@@ -557,7 +554,7 @@ class GeneralDataset(Dataset):
             if weights_cfg is None:
                 weights = torch.ones(K) / K
             else:
-                weights = torch.tensor(weights_cfg, dtype = torch.float32)
+                weights = torch.tensor(weights_cfg, dtype=torch.float32)
                 weights = weights / weights.sum()
 
             k = torch.multinomial(weights, 1).item()
@@ -566,9 +563,9 @@ class GeneralDataset(Dataset):
             s = std[k]
 
             if self.manifold_name == "euclidean":
-                sample = self.manifold.random_normal(self.dim, mean = m, std = s)
+                sample = self.manifold.random_normal(self.dim, mean=m, std=s)
             else:
-                sample = self.manifold.wrapped_normal(self.dim, mean = m, std = s)
+                sample = self.manifold.wrapped_normal(self.dim, mean=m, std=s)
             return sample
         elif dist_key == "checkerboard":
             if self._checkerboard is None:
@@ -592,8 +589,8 @@ class GeneralDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.x0_all is None or self.x1_all is None:
-            x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0)
-            x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1)
+            x0 = self.sample_normalized(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
+            x1 = self.sample_normalized(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
             return {"x0": x0, "x1": x1}
 
         x0 = self.x0_all[idx]
@@ -640,7 +637,9 @@ class GeneralDataset(Dataset):
             "mean_x0": _to_python(self.mean_x0),
             "mean_x1": _to_python(self.mean_x1),
             "origin": _to_python(self.reference_origin),
-            "normalize_tangent_distributions": bool(self.gcfg.get("normalize_tangent_distributions", False)),
+            "normalize_tangent_distributions": bool(
+                self.gcfg.get("normalize_tangent_distributions", False)
+            ),
             "eval_t_values": (
                 None if self.eval_t_values is None else _to_python(self.eval_t_values)
             ),
@@ -700,8 +699,8 @@ class GeneralDataset(Dataset):
             x0_all = []
             x1_all = []
             for _ in range(self.n_samples):
-                x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0)
-                x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1)
+                x0 = self.sample_normalized(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
+                x1 = self.sample_normalized(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
 
                 x0_all.append(x0.detach().cpu())
                 x1_all.append(x1.detach().cpu())
@@ -719,6 +718,7 @@ class GeneralDataset(Dataset):
             cfg_yaml = None
             try:
                 from omegaconf import OmegaConf  # type: ignore
+
                 cfg_yaml = OmegaConf.to_yaml(self.cfg)
             except Exception:
                 cfg_yaml = None
@@ -827,42 +827,57 @@ def _get_dataset(cfg):
             dataset_size=10000,
         )
     elif cfg.data == "eeg_1":
-        dataset = EEG(cfg.eeg_datadir, set="1", Riem_geodesic=cfg.eeg.Riem_geodesic, Riem_norm=cfg.eeg.Riem_norm)
+        dataset = EEG(
+            cfg.eeg_datadir,
+            set="1",
+            Riem_geodesic=cfg.eeg.Riem_geodesic,
+            Riem_norm=cfg.eeg.Riem_norm,
+        )
     elif cfg.data == "eeg_2a":
-        dataset = EEG(cfg.eeg_datadir, set="2a", Riem_geodesic=cfg.eeg.Riem_geodesic, Riem_norm=cfg.eeg.Riem_norm)
+        dataset = EEG(
+            cfg.eeg_datadir,
+            set="2a",
+            Riem_geodesic=cfg.eeg.Riem_geodesic,
+            Riem_norm=cfg.eeg.Riem_norm,
+        )
     elif cfg.data == "eeg_2b":
-        dataset = EEG(cfg.eeg_datadir, set="2b", Riem_geodesic=cfg.eeg.Riem_geodesic, Riem_norm=cfg.eeg.Riem_norm)
+        dataset = EEG(
+            cfg.eeg_datadir,
+            set="2b",
+            Riem_geodesic=cfg.eeg.Riem_geodesic,
+            Riem_norm=cfg.eeg.Riem_norm,
+        )
     elif cfg.data == "hyperbolic":
         dataset = HyperbolicDatasetPair()
     elif cfg.data == "images":
         dataset = HyperbolicImages(cfg.get("images_datadir"), cfg.get("images_labels"))
-        #dataset = HyperbolicImages(cfg.get("images_datadir_A"), cfg.get("images_datadir_B"))
+        # dataset = HyperbolicImages(cfg.get("images_datadir_A"), cfg.get("images_datadir_B"))
     elif cfg.data == "hyper_uni2norm":
         dataset = HyperbolicUniformToGaussian()
     elif cfg.data == "euclidean":
         dataset = EuclideanImages(cfg.get("euclidean_datadir"))
     elif cfg.data == "checkerboard_sphere":
-       dataset = CheckerboardDataset(
+        dataset = CheckerboardDataset(
             manifold=SphereCurvature(c=float(cfg.general.curvature)),
             manifold_name="sphere",
             dim=int(cfg.general.dim),
-            n_samples=int(cfg.general.n_samples)
-       )
+            n_samples=int(cfg.general.n_samples),
+        )
     elif cfg.data == "checkerboard_poincare":
-       dataset = CheckerboardDataset(
-                manifold=PoincareBall(c=float(cfg.general.curvature)),
-                manifold_name="poincare",
-                dim=int(cfg.general.dim),
-                n_samples=int(cfg.general.n_samples),
-                tangent_scale=cfg.general.get("checkerboard_tangent_scale", 0.7)
-         )
+        dataset = CheckerboardDataset(
+            manifold=PoincareBall(c=float(cfg.general.curvature)),
+            manifold_name="poincare",
+            dim=int(cfg.general.dim),
+            n_samples=int(cfg.general.n_samples),
+            tangent_scale=cfg.general.get("checkerboard_tangent_scale", 0.7),
+        )
     elif cfg.data == "checkerboard_euclidean":
-       dataset = CheckerboardDataset(
-                manifold=Euclidean(),
-                manifold_name="euclidean",
-                dim=int(cfg.general.dim),
-                n_samples=int(cfg.general.n_samples)
-         )
+        dataset = CheckerboardDataset(
+            manifold=Euclidean(),
+            manifold_name="euclidean",
+            dim=int(cfg.general.dim),
+            n_samples=int(cfg.general.n_samples),
+        )
     elif cfg.data == "general_fm":
         dataset = GeneralDataset(cfg)
 
@@ -906,26 +921,26 @@ def get_loaders(cfg):
     train_set = ExpandDataset(train_set, expand_factor=expand_factor)
 
     train_loader = DataLoader(
-        train_set, 
-        cfg.optim.batch_size, 
-        shuffle=True, 
-        pin_memory=True, 
-        drop_last=True, 
-        num_workers=cfg.get("num_workers", 8)
+        train_set,
+        cfg.optim.batch_size,
+        shuffle=True,
+        pin_memory=True,
+        drop_last=True,
+        num_workers=cfg.get("num_workers", 8),
     )
     val_loader = DataLoader(
-        val_set, 
-        cfg.optim.val_batch_size, 
+        val_set,
+        cfg.optim.val_batch_size,
         shuffle=False,
         pin_memory=True,
-        num_workers=cfg.get("num_workers", 8)
+        num_workers=cfg.get("num_workers", 8),
     )
     test_loader = DataLoader(
         test_set,
-        cfg.optim.val_batch_size, 
-        shuffle=False, 
+        cfg.optim.val_batch_size,
+        shuffle=False,
         pin_memory=True,
-        num_workers=cfg.get("num_workers", 8)
+        num_workers=cfg.get("num_workers", 8),
     )
 
     return train_loader, val_loader, test_loader
@@ -934,7 +949,7 @@ def get_loaders(cfg):
 def get_manifold(cfg):
     dataset, _ = _get_dataset(cfg)
 
-    if isinstance(dataset, MeshDataset): #or isinstance(dataset, MeshDatasetPair):
+    if isinstance(dataset, MeshDataset):  # or isinstance(dataset, MeshDatasetPair):
         manifold = dataset.manifold(
             numeigs=cfg.mesh.numeigs, metric=Metric(cfg.mesh.metric), temp=cfg.mesh.temp
         )
