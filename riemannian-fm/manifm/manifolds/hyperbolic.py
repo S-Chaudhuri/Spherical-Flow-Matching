@@ -57,7 +57,7 @@ class PoincareBall(geoopt_PoincareBall):
         logprob = -d/2*const - dist**2/(2*std*std) +(d-1)*(torch.log(dist + 1e-9) - torch.log(torch.sinh(dist)+ 1e-9))      
         return logprob
 
-    def wrapped_gaussian_ring(self, mean, std, radius):
+    def wrapped_gaussian_ring(self, dim, mean, std, radius):
         """
         Gaussian ring on Poincaré ball.
         """
