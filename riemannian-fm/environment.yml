@@ -1,12 +1,9 @@
 name: manifm
 channels:
-  - pytorch
   - conda-forge
   - nvidia
 dependencies:
   - python=3.9
-  - pytorch
-  - pytorch-cuda=11.7
   - igl
   - meshplot
   - matplotlib
@@ -32,6 +29,7 @@ dependencies:
     - click
     - wandb
     - geoopt
+    - geomloss
     - biopython
     - pyevtk
     - ipympl

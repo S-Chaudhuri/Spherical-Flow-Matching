@@ -357,6 +357,8 @@ class GeneralDataset(Dataset):
         self.std_x1 = gcfg.get("std_x1", None)
         self.mean_x0 = gcfg.get("mean_x0", None)
         self.mean_x1 = gcfg.get("mean_x1", None)
+        self.radius_x0 = gcfg.get("radius_x0", None)    # radius for Gaussian ring
+        self.radius_x1 = gcfg.get("radius_x1", None)    # radius for Gaussian ring
 
         # saving configuration for evalutaion
         self.eval_n_pairs = int(cfg.get("eval_n_pairs", 100))
@@ -515,16 +517,18 @@ class GeneralDataset(Dataset):
             return x_new.squeeze(0)
         return x_new
 
-    def sample_normalized(self, dist_name, std=None, mean=None):
+
+    def sample_normalized(self, dist_name, std = None, mean = None, radius = None):
         """
         Sample from the requested distribution, then optionally apply
         curvature-radius normalization with geodesic dilation
         """
-        x = self.sample(dist_name, std=std, mean=mean)
+        x = self.sample(dist_name, std = std, mean = mean, radius = radius)
         x = self.normalize_sample_by_curvature(x)
         return x
+            
 
-    def sample(self, dist_name, std=None, mean=None):
+    def sample(self, dist_name, std = None, mean = None, radius = None):
         if std is None:
             std = 1.0
 
@@ -545,8 +549,15 @@ class GeneralDataset(Dataset):
             if self.manifold_name == "euclidean":
                 sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
             else:
-                sample = self.manifold.wrapped_normal(self.dim, mean=mean, std=std)
+                sample = self.manifold.wrapped_normal(self.dim, mean = mean, std = std)
             return sample
+        elif dist_key == "gaussian-ring":
+            if self.manifold_name == "euclidean":
+                sample = self.manifold.random_gaussian_ring(dim = self.dim, mean = mean, std = std, radius = radius)
+                return sample
+            else: 
+                sample = self.manifold.wrapped_gaussian_ring(dim = self.dim, mean = mean, std = std, radius = radius)
+                return sample
         elif dist_key == "mog":
             K = len(std)
 
@@ -589,8 +600,8 @@ class GeneralDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.x0_all is None or self.x1_all is None:
-            x0 = self.sample_normalized(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
-            x1 = self.sample_normalized(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
+            x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0, radius = self.radius_x0)
+            x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1, radius = self.radius_x1)
             return {"x0": x0, "x1": x1}
 
         x0 = self.x0_all[idx]
@@ -636,6 +647,8 @@ class GeneralDataset(Dataset):
             "std_x1": _to_python(self.std_x1),
             "mean_x0": _to_python(self.mean_x0),
             "mean_x1": _to_python(self.mean_x1),
+            "radius_x0": _to_python(self.radius_x0),
+            "radius_x1": _to_python(self.radius_x1),
             "origin": _to_python(self.reference_origin),
             "normalize_tangent_distributions": bool(
                 self.gcfg.get("normalize_tangent_distributions", False)
@@ -699,8 +712,8 @@ class GeneralDataset(Dataset):
             x0_all = []
             x1_all = []
             for _ in range(self.n_samples):
-                x0 = self.sample_normalized(self.x0_dist, std=self.std_x0, mean=self.mean_x0)
-                x1 = self.sample_normalized(self.x1_dist, std=self.std_x1, mean=self.mean_x1)
+                x0 = self.sample_normalized(self.x0_dist, std = self.std_x0, mean = self.mean_x0, radius = self.radius_x0)
+                x1 = self.sample_normalized(self.x1_dist, std = self.std_x1, mean = self.mean_x1, radius = self.radius_x1)
 
                 x0_all.append(x0.detach().cpu())
                 x1_all.append(x1.detach().cpu())
