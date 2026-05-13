@@ -62,7 +62,7 @@ def get_metrics(run_dir, run_glob, out_dir, default_metrics=None):
         out_file.parent.mkdir(parents=True, exist_ok=True)
 
         # print(f'\nGenerating plot -> {out_file}')
-        visualize_pt_file(paths.artifacts_pt, run_dir=paths.run_dir, meta=meta, save_path=out_file)
+        # visualize_pt_file(paths.artifacts_pt, run_dir=paths.run_dir, meta=meta, save_path=out_file)
         metrics_list[label] = metrics
     return metrics_list
 
