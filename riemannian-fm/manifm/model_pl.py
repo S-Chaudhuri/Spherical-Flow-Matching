@@ -942,6 +942,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         if torch.isfinite(loss):
             # log train metrics
             self.log("train/loss", loss, on_step=True, on_epoch=True)
+            
             self.train_metric.update(loss)
         else:
             # skip step if loss is NaN.
@@ -952,6 +953,37 @@ class ManifoldFMLitModule(pl.LightningModule):
 
     # def training_epoch_end(self, outputs):
     def on_train_epoch_end(self):
+        train_loss = self.train_metric.compute()
+
+        # early stopping on train loss
+        if (
+            self._early_stopping_patience > 0
+            and getattr(self, "trainer", None) is not None
+            and not getattr(self.trainer, "sanity_checking", False)
+        ):
+            if torch.is_tensor(train_loss):
+                train_loss_scalar = float(train_loss.detach().cpu().item())
+                train_loss_finite = bool(torch.isfinite(train_loss).item())
+            else:
+                train_loss_scalar = float(train_loss)
+                train_loss_finite = math.isfinite(train_loss_scalar)
+
+            if train_loss_finite:
+                step = int(self.global_step)
+                # update newest low loss and step at which it was achieved
+                if train_loss_scalar < self._early_stopping_best:
+                    self._early_stopping_best = train_loss_scalar
+                    self._early_stopping_best_step = step
+                    if getattr(self.trainer, "is_global_zero", True):
+                        os.makedirs(os.path.dirname(self._early_stopping_ckpt_path), exist_ok=True)
+                        self.trainer.save_checkpoint(self._early_stopping_ckpt_path)
+                # check if the amount of steps since last lowest exceeds threshold
+                elif (step - int(self._early_stopping_best_step)) >= self._early_stopping_patience:
+                    self.trainer.should_stop = True
+                    fit_loop = getattr(self.trainer, "fit_loop", None)
+                    if fit_loop is not None:
+                        fit_loop.should_stop = True
+
         self.train_metric.reset()
 
     def validation_step(self, batch: Any, batch_idx: int):
@@ -1012,34 +1044,34 @@ class ManifoldFMLitModule(pl.LightningModule):
         self.val_metric_best.update(val_loss)
         self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
 
-        # early stopping on validation loss
-        if (
-            self._early_stopping_patience > 0
-            and getattr(self, "trainer", None) is not None
-            and not getattr(self.trainer, "sanity_checking", False)
-        ):
-            if torch.is_tensor(val_loss):
-                val_loss_scalar = float(val_loss.detach().cpu().item())
-                val_loss_finite = bool(torch.isfinite(val_loss).item())
-            else:
-                val_loss_scalar = float(val_loss)
-                val_loss_finite = math.isfinite(val_loss_scalar)
+        # # early stopping on train loss
+        # if (
+        #     self._early_stopping_patience > 0
+        #     and getattr(self, "trainer", None) is not None
+        #     and not getattr(self.trainer, "sanity_checking", False)
+        # ):
+        #     if torch.is_tensor(val_loss):
+        #         val_loss_scalar = float(val_loss.detach().cpu().item())
+        #         val_loss_finite = bool(torch.isfinite(val_loss).item())
+        #     else:
+        #         val_loss_scalar = float(val_loss)
+        #         val_loss_finite = math.isfinite(val_loss_scalar)
 
-            if val_loss_finite:
-                step = int(self.global_step)
-                # update newest low loss and step at which it was achieved
-                if val_loss_scalar < self._early_stopping_best:
-                    self._early_stopping_best = val_loss_scalar
-                    self._early_stopping_best_step = step
-                    if getattr(self.trainer, "is_global_zero", True):
-                        os.makedirs(os.path.dirname(self._early_stopping_ckpt_path), exist_ok=True)
-                        self.trainer.save_checkpoint(self._early_stopping_ckpt_path)
-                # check if the amount of steps since last lowest exceeds threshold
-                elif (step - int(self._early_stopping_best_step)) >= self._early_stopping_patience:
-                    self.trainer.should_stop = True
-                    fit_loop = getattr(self.trainer, "fit_loop", None)
-                    if fit_loop is not None:
-                        fit_loop.should_stop = True
+        #     if val_loss_finite:
+        #         step = int(self.global_step)
+        #         # update newest low loss and step at which it was achieved
+        #         if val_loss_scalar < self._early_stopping_best:
+        #             self._early_stopping_best = val_loss_scalar
+        #             self._early_stopping_best_step = step
+        #             if getattr(self.trainer, "is_global_zero", True):
+        #                 os.makedirs(os.path.dirname(self._early_stopping_ckpt_path), exist_ok=True)
+        #                 self.trainer.save_checkpoint(self._early_stopping_ckpt_path)
+        #         # check if the amount of steps since last lowest exceeds threshold
+        #         elif (step - int(self._early_stopping_best_step)) >= self._early_stopping_patience:
+        #             self.trainer.should_stop = True
+        #             fit_loop = getattr(self.trainer, "fit_loop", None)
+        #             if fit_loop is not None:
+        #                 fit_loop.should_stop = True
 
         self.val_metric.reset()
         
