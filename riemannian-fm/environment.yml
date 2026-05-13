@@ -29,7 +29,7 @@ dependencies:
     - click
     - wandb
     - geoopt
-    - geomloss
+    - geomloss==0.2.6
     - biopython
     - pyevtk
     - ipympl

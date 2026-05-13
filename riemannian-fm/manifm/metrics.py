@@ -130,6 +130,7 @@ class ManifoldMetricHandler:
             p = p,
             blur = blur,
             debias = True,
+            backend = "tensorized",
         )
         val = solver(v_gen, v_real)
         val = torch.clamp(val, min = 0.0) ** (1.0 / p)
@@ -178,7 +179,13 @@ class ManifoldMetricHandler:
         #     blur = blur * (abs(self.kappa) ** 0.5)
             
         if self.m_type == "euclidean":  # debias = True, i.e. use Sinkhorn divergence
-            solver = SamplesLoss(loss = "sinkhorn", p = p, blur = blur, debias = True)
+            solver = SamplesLoss(
+                loss = "sinkhorn",
+                p = p,
+                blur = blur,
+                debias = True,
+                backend = "tensorized",
+            )
             val = solver(x_gen, x_real)
             
         else:
@@ -200,6 +207,7 @@ class ManifoldMetricHandler:
                 blur = blur,
                 debias = True, # debiasing so we get the Sinkhorn divergence by Feydy et al. (2019)
                 cost = geodesic_cost,
+                backend = "tensorized",
             )
             val = solver(x_gen, x_real)
 
