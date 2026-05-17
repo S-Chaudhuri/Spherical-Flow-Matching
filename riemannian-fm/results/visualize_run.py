@@ -357,7 +357,8 @@ def plot_poincare(data_dict, meta, save_path=None):
     if not np.isfinite(vmax) or vmax == 0:
         axes[4].set_title("KDE Difference (unavailable)")
     else:
-        im = axes[4].contourf(gx, gy, z_diff, levels=12, cmap="RdBu", vmin=-vmax, vmax=vmax)
+        z_diff= z_diff/vmax
+        im = axes[4].contourf(gx, gy, z_diff, levels=12, cmap="RdBu", vmin=-1, vmax=1)
         axes[4].set_title("KDE Difference (True − Generated)")
         plt.colorbar(im, ax=axes[4], fraction=0.046, pad=0.04)
 
