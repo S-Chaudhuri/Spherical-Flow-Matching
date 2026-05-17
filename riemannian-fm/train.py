@@ -76,19 +76,25 @@ def main(cfg: DictConfig):
                 mu0 = torch.zeros(dim)
                 mu0[0] = R
 
-                # point at distance 'dist' along geodesic (mu1)
+                # symmetric point at distance 'dist' from mu0
                 mu1 = torch.zeros(dim)
                 mu1[0] = R * math.cos(theta)
-                mu1[1] = R * math.sin(theta)
 
-                # save to cfg as lists with 7 decimal precision
+                if dim < 2:
+                    raise ValueError("Sphere construction requires dim >= 2")
+
+                spread_val = R * math.sin(theta) / math.sqrt(dim - 1)
+                mu1[1:] = spread_val
+
+                # save to cfg
                 cfg.general.mean_x0 = [float(f"{v:.7f}") for v in mu0]
                 cfg.general.mean_x1 = [float(f"{v:.7f}") for v in mu1]
 
-                pi_R = math.pi * R  # π / √c, bound for gaussian ring radius 
-
-                cfg.general.radius_x1 = float(pi_R * torch.tanh(torch.tensor(cfg.general.radius_x1) / pi_R))
-                
+                if cfg.general.get("radius_x1", None) is not None:
+                    pi_R = math.pi * R
+                    cfg.general.radius_x1 = float(
+                        pi_R * torch.tanh(torch.tensor(cfg.general.radius_x1) / pi_R)
+                    )
         else:
             pass  # use YAML
 

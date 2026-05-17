@@ -311,17 +311,26 @@ class SphereCurvature(Manifold):
         return self.uniform_logprob(*args, **kwargs)
     
     def wrapped_gaussian_ring(self, dim, mean, std, radius):
-        device = mean.device
+        # device = mean.device
 
-        z = torch.randn_like(mean)
+        # z = torch.randn_like(mean)
 
-        v = self.proju(mean, z)
+        # v = self.proju(mean, z)
 
-        v = v / (v.norm(dim=-1, keepdim=True) + EPS[v.dtype])
+        # v = v / (v.norm(dim=-1, keepdim=True) + EPS[v.dtype])
 
-        rho = torch.randn((), device=device) * std + radius
+        # rho = torch.randn((), device=device) * std + radius
 
-        u = rho * v
-        sample = self.expmap(mean, u)
+        # u = rho * v
+        # sample = self.expmap(mean, u)
+
+        noise = torch.randn(dim, device=mean.device) * std
+        v_noise = self.proju(mean, noise)
+        gaussian_sample = self.expmap(mean, v_noise)  # Gaussian spread around mean
+
+        z = torch.randn(dim, device=mean.device)
+        v = self.proju(gaussian_sample, z)
+        v = v / (v.norm() + 1e-8)
+        sample = self.expmap(gaussian_sample, radius * v)
 
         return sample
