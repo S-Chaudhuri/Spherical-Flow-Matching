@@ -11,6 +11,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
+from scipy.stats import gaussian_kde
 
 
 
@@ -265,7 +266,7 @@ def plot_euclidean(data_dict, meta, save_path=None):
 def plot_poincare(data_dict, meta, save_path=None):
     """Replicates the codebase's plot_poincare style with the bounding circle."""
     d = data_dict
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, 5, figsize=(30, 6))
     fig.suptitle(format_title(meta, "Poincaré Disk Flow Matching"), fontsize=12, y=1.05)
 
     for ax in axes:
@@ -274,12 +275,35 @@ def plot_poincare(data_dict, meta, save_path=None):
         ax.set_ylim([-1.1, 1.1])
         ax.set_aspect("equal")
         ax.axis("off")
+    
+    #Removing points from x1_hat that are outside the unit disk (due to numerical issues)
+    mask = np.linalg.norm(d["x1_hat"], axis=-1) < 1.0
+    n_removed = (~mask).sum()
+    if n_removed > 0: #logging a warning if any points were removed
+        print(f"Warning: Removed {n_removed} points from x1_hat that were outside the unit disk.")
+    x1_hat = d["x1_hat"][mask]
+
+    #KDE helper
+    def disk_kde(points, resolution=100):
+        kde = gaussian_kde(points.T)
+        # try:
+        #   kde = gaussian_kde(points.T)
+        # except (np.linalg.LinAlgError,ValueError) as e:
+        #     print("Warning: KDE computation failed due to singular covariance. Returning NaN grid.")
+        #     grid_x, grid_y = np.mgrid[-1:1:resolution*1j, -1:1:resolution*1j]
+        #     z = np.full(grid_x.shape, np.nan)
+        #     return grid_x, grid_y, z
+        grid_x, grid_y = np.mgrid[-1:1:resolution*1j, -1:1:resolution*1j]
+        inside = (grid_x**2 + grid_y**2) < 1.0
+        z = kde(np.vstack([grid_x.ravel(),grid_y.ravel()])).reshape(resolution,resolution)
+        z[~inside] = np.nan
+        return grid_x,grid_y,z
 
     # Panel 1: Distributions
     axes[0].scatter(d["x0"][:, 0], d["x0"][:, 1], c="gray", alpha=0.3, label="Source", s=10)
     axes[0].scatter(d["x1"][:, 0], d["x1"][:, 1], c="blue", alpha=0.5, label="True Target", s=15)
     axes[0].scatter(
-        d["x1_hat"][:, 0], d["x1_hat"][:, 1], c="red", alpha=0.5, label="Generated", s=15
+        x1_hat[:, 0], x1_hat[:, 1], c="red", alpha=0.5, label="Generated", s=15
     )
     axes[0].set_title("Distribution Matching")
     axes[0].legend(loc="upper right")
@@ -313,6 +337,29 @@ def plot_poincare(data_dict, meta, save_path=None):
     )
     axes[2].set_title(f"Field Alignment at t={d['eval_t'][mid_idx]:.2f}")
     axes[2].legend(loc="upper right")
+
+    #panel 4: KDE overlay
+    gx, gy, z_true = disk_kde(d["x1"])
+    gx,gy,z_hat = disk_kde(x1_hat)
+    axes[3].contourf(gx,gy,z_true, levels=6, colors=["blue"], alpha=0.2)
+    axes[3].contour(gx,gy,z_true, levels=6, colors=["blue"], linewidths = 0.8, label="True")
+    axes[3].contourf(gx,gy,z_hat, levels=6, colors=["red"], alpha=0.2)
+    axes[3].contour(gx,gy,z_hat, levels=6, colors=["red"], linewidths = 0.8, label="Generated")
+    axes[3].set_title("Density Estimation (KDE): True vs Generated")
+    axes[3].legend(handles=[
+        plt.Line2D([0], [0], color="blue", label="True"),
+        plt.Line2D([0], [0], color="red", label="Generated")
+    ],loc ="upper right")
+
+    #Difference of KDEs
+    z_diff = z_true -z_hat # positive: under generates, negetive: over generates
+    vmax = np.nanmax(np.abs(z_diff))
+    if not np.isfinite(vmax) or vmax == 0:
+        axes[4].set_title("KDE Difference (unavailable)")
+    else:
+        im = axes[4].contourf(gx, gy, z_diff, levels=12, cmap="RdBu", vmin=-vmax, vmax=vmax)
+        axes[4].set_title("KDE Difference (True − Generated)")
+        plt.colorbar(im, ax=axes[4], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
     if save_path:
