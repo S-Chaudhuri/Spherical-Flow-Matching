@@ -42,11 +42,11 @@ def main(cfg: DictConfig):
         #pl.utilities.seed.seed_everything(cfg.seed)
         pl.seed_everything(cfg.seed)
 
-    def configure_x1(cfg):
+    def configure_dynamically(cfg):
         dim = cfg.general.dim
         dist = 0.5
 
-        if cfg.general.x1_dist == "gaussian-ring":
+        if cfg.general.x1_dist == "gaussian-ring" or cfg.general.x1_dist == "gaussian":
             if cfg.general.manifold == "euclidean":
                 cfg.general.mean_x0 = [0.0] * dim
                 cfg.general.mean_x1 = [dist / math.sqrt(dim)] * dim
@@ -92,7 +92,7 @@ def main(cfg: DictConfig):
         else:
             pass  # use YAML
 
-    configure_x1(cfg)
+    configure_dynamically(cfg)
 
     print(cfg)
 
