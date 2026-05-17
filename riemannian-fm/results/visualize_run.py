@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
 
 
+
 BASE_DIR = Path(__file__).resolve().parent
 
 def get_metrics(run_dir, run_glob, out_dir, default_metrics=None):
@@ -516,17 +517,19 @@ def visualize_pt_file(pt_file: str | Path, run_dir: str | Path, meta: dict, save
 
     if "poincare" in manifold_type:
         #print(f"Detected Poincaré manifold (Dim={dim}). Plotting in the hyperbolic disk...")
-        plot_poincare(data, meta, save_path_str)
+        if dim == 2:
+            plot_poincare(data, meta, save_path_str)
     elif "sphere" in manifold_type:
         if dim == 2:
             #print(f"Detected Spherical manifold (Dim={dim}). Plotting 2D circle...")
             plot_sphere_2d(data, meta, save_path_str)
-        else:
+        elif dim == 3:
             #print(f"Detected Spherical manifold (Dim={dim}). Plotting 3D wireframe sphere...")
             plot_sphere_3d(data, meta, save_path_str)
     else:
+        if dim == 2:
         #print(f"Defaulting to Euclidean flat space plotting (Dim={dim})...")
-        plot_euclidean(data, meta, save_path_str)
+            plot_euclidean(data, meta, save_path_str)
 
     return meta
 

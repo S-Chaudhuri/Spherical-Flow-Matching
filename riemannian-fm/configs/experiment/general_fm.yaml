@@ -8,11 +8,12 @@ general:
   dim: 3
   x0_dist: gaussian
   x1_dist: gaussian
-  n_samples: 20000
+  n_samples: 60000
   std_x0: 0.7
   std_x1: 0.7                           # set null for checkerboard
   mean_x0: [0.0, 0.0, 0.0]              
   mean_x1: [0.8, 0.0, 0.0]              # set null for checkerboard
+  radius_x1: 1
   weights: null                         # for mixture of gaussians, define as list: [0.5, 0.5]
   origin: null 
                                         # if true, rescale all sampled x0/x1 points by
@@ -44,8 +45,8 @@ metrics_param:
 save_densities: False
 
 model:
-  d_model: 512
-  num_layers: 5
+  d_model: 1024
+  num_layers: 8
   actfn: swish
   fourier: null
   atol: 1e-6
@@ -53,12 +54,12 @@ model:
   metric_normalize: True
 
 optim:
-  num_iterations: 10000
+  num_iterations: 20000
   batch_size: 512
   val_batch_size: 2000
   lr: 1e-4
 
-val_every: 50
+val_every: 1000
 early_stopping_patience: 1000
 div_mode: rademacher
 eval_projx: False
@@ -68,3 +69,4 @@ visualize: True
 
 eval_n_pairs: 2000 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same n pairs
 eval_t_values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+save_artifacts: True

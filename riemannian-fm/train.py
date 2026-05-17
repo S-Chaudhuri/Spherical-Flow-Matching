@@ -9,6 +9,7 @@ os.environ["GEOMSTATS_BACKEND"] = "pytorch"
 
 import os.path as osp
 import sys
+import math
 from datetime import datetime
 from omegaconf import DictConfig, OmegaConf
 import hydra
@@ -40,6 +41,58 @@ def main(cfg: DictConfig):
     if cfg.get("seed", None) is not None:
         #pl.utilities.seed.seed_everything(cfg.seed)
         pl.seed_everything(cfg.seed)
+
+    def configure_x1(cfg):
+        dim = cfg.general.dim
+        dist = 0.5
+
+        if cfg.general.x1_dist == "gaussian-ring":
+            if cfg.general.manifold == "euclidean":
+                cfg.general.mean_x0 = [0.0] * dim
+                cfg.general.mean_x1 = [dist / math.sqrt(dim)] * dim
+            
+            if cfg.general.manifold == "poincare":
+                curvature = cfg.general.curvature
+
+                u = torch.ones(dim)
+                u = u / torch.norm(u) 
+
+                rho = torch.tanh(torch.sqrt(torch.tensor(curvature)) * dist / 2.0) / torch.sqrt(torch.tensor(curvature))
+                x1 = rho * u
+
+                cfg.general.mean_x0 = [0.0] * dim
+                cfg.general.mean_x1 = [float(f"{v:.8f}") for v in x1]
+
+            if cfg.general.manifold == "sphere":
+                curvature = cfg.general.curvature
+
+                # sphere radius
+                R = 1.0 / math.sqrt(curvature)
+
+                # geodesic angle corresponding to distance dist
+                theta = dist / R
+
+                # north pole (mu0)
+                mu0 = torch.zeros(dim)
+                mu0[0] = R
+
+                # point at distance 'dist' along geodesic (mu1)
+                mu1 = torch.zeros(dim)
+                mu1[0] = R * math.cos(theta)
+                mu1[1] = R * math.sin(theta)
+
+                # save to cfg as lists with 7 decimal precision
+                cfg.general.mean_x0 = [float(f"{v:.7f}") for v in mu0]
+                cfg.general.mean_x1 = [float(f"{v:.7f}") for v in mu1]
+
+                pi_R = math.pi * R  # π / √c, bound for gaussian ring radius 
+
+                cfg.general.radius_x1 = float(pi_R * torch.tanh(torch.tensor(cfg.general.radius_x1) / pi_R))
+                
+        else:
+            pass  # use YAML
+
+    configure_x1(cfg)
 
     print(cfg)
 
