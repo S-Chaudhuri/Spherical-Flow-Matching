@@ -336,7 +336,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         plt.ylim([-1.1, 1.1])
         plt.axis("off")
         plt.tight_layout()
-        plt.savefig(f"figs/samples-{self.global_step:06d}.png")
+        #plt.savefig(f"figs/samples-{self.global_step:06d}.png")
         plt.savefig(f"figs/samples-{self.global_step:06d}.pdf")
         plt.close()
 
@@ -351,7 +351,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         plt.ylim([-1.1, 1.1])
         plt.axis("off")
         plt.tight_layout()
-        plt.savefig(f"figs/trajs-{self.global_step:06d}.png")
+        #plt.savefig(f"figs/trajs-{self.global_step:06d}.png")
         plt.savefig(f"figs/trajs-{self.global_step:06d}.pdf")
         plt.close()
 
@@ -400,7 +400,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         ax.set_box_aspect([1, 1, 1])
         ax.axis('off')
         
-        plt.savefig(f"figs/sphere-{self.global_step:06d}.png")
+        plt.savefig(f"figs/sphere-{self.global_step:06d}.pdf")
         plt.close()
 
     def add_geodesic_grid(self,ax: plt.Axes, manifold: geoopt.Stereographic, line_width=0.1):
@@ -535,7 +535,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         ax.set_ylim([-lim, lim])
         ax.set_aspect("equal")
         ax.axis("off")
-        plt.savefig(f"figs/sphere2d-{self.global_step:06d}.png")
+        plt.savefig(f"figs/sphere2d-{self.global_step:06d}.pdf")
         plt.close()
 
     def to_numpy(self, x):
@@ -594,7 +594,7 @@ class ManifoldFMLitModule(pl.LightningModule):
             raise ValueError(f"Unsupported dimension: {dim}. Only 2D and 3D are supported.")
 
         # --- Save ---
-        plt.savefig(f"figs/euclidean-{self.global_step:06d}.png")
+        plt.savefig(f"figs/euclidean-{self.global_step:06d}.pdf")
         plt.close()
 
     def poincare_to_hyperboloid(self, x):
@@ -658,7 +658,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         ax.set_title("Hyperboloid Model (3D)")
         ax.legend()
         plt.tight_layout()
-        plt.savefig(f"figs/hyperboloid-{self.global_step:06d}.png")
+        plt.savefig(f"figs/hyperboloid-{self.global_step:06d}.pdf")
         plt.close()
 
 
