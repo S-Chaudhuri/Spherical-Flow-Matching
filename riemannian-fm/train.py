@@ -227,6 +227,13 @@ def main(cfg: DictConfig):
     trainer.test(model, test_loader, ckpt_path=ckpt_path)
     log.info(f"Best ckpt path: {ckpt_path}")
 
+    if cfg.get("delete_checkpoints_after_use", False):
+        for p in glob("checkpoints/**/*.ckpt", recursive=True):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
     test_metrics = trainer.callback_metrics
 
     # merge train and test metrics
