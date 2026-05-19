@@ -186,7 +186,7 @@ def main(cfg: DictConfig):
                 save_dir=".",
                 name=f"{cfg.data}_{now}",
                 project="ManiFM",
-                log_model=True,
+                log_model=False,
                 config=cfg_dict,
                 resume=True,
             )

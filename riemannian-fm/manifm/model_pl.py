@@ -149,7 +149,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         # artifacts/general_dataset_fixed_eval.pt. If present, upload it as a W&B artifact.
         if getattr(self, "trainer", None) is None or not self.trainer.is_global_zero:
             return
-        if os.path.exists(self._fixed_eval_path):
+        if self.cfg.get("upload_fixed_eval", False) and os.path.exists(self._fixed_eval_path):
             self._wandb_log_file("fixed_eval_inputs", self._fixed_eval_path, type_name="fixed_eval")
 
     @torch.no_grad()
@@ -1021,21 +1021,21 @@ class ManifoldFMLitModule(pl.LightningModule):
         if batch_idx == 0:
             self.visualize(batch)
             
-            # log model samples 
-            run = self._wandb_run()
-            if run is not None:
-                n = 256
-                if isinstance(batch, dict) and "x0" in batch:
-                    x0 = batch["x0"][:n]
-                    x1_hat = self.sample(x0.shape[0], device=x0.device, x0=x0)
-                    self._wandb_log_pt("val_x1_hat", {"x0": x0.detach().cpu(), "x1_hat": x1_hat.detach().cpu()})
-                else:
-                    x1_hat = self.sample(n, device=self.device)
-                    self._wandb_log_pt("val_x1_hat", {"x1_hat": x1_hat.detach().cpu()})
+            # # log model samples 
+            # run = self._wandb_run()
+            # if run is not None:
+            #     n = 256
+            #     if isinstance(batch, dict) and "x0" in batch:
+            #         x0 = batch["x0"][:n]
+            #         x1_hat = self.sample(x0.shape[0], device=x0.device, x0=x0)
+            #         self._wandb_log_pt("val_x1_hat", {"x0": x0.detach().cpu(), "x1_hat": x1_hat.detach().cpu()})
+            #     else:
+            #         x1_hat = self.sample(n, device=self.device)
+            #         self._wandb_log_pt("val_x1_hat", {"x1_hat": x1_hat.detach().cpu()})
 
-            # log integration grid used for trajectories
-            t_grid = torch.linspace(0, 1, 1001)
-            self._wandb_log_pt("eval_t_grid", {"t_grid": t_grid})   
+            # # log integration grid used for trajectories
+            # t_grid = torch.linspace(0, 1, 1001)
+            # #self._wandb_log_pt("eval_t_grid", {"t_grid": t_grid})   
         return {"loss": loss}
 
     # def validation_epoch_end(self, outputs):

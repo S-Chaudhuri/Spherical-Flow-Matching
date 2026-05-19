@@ -56,11 +56,11 @@ model:
 optim:
   num_iterations: 20000
   batch_size: 512
-  val_batch_size: 2000
+  val_batch_size: 500
   lr: 1e-4
 
 val_every: 1000
-early_stopping_patience: 1000
+early_stopping_patience: 100
 div_mode: rademacher
 eval_projx: False
 local_coords: False
@@ -70,5 +70,6 @@ visualize: True
 delete_checkpoints_after_use: True
 
 eval_n_pairs: 2000 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same n pairs
-eval_t_values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+eval_t_values: [0.0,0.2, 0.5, 0.8, 1.0]
 save_artifacts: True
+upload_fixed_eval: False  # upload general_dataset_fixed_eval.pt to WandB
