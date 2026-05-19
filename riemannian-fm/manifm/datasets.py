@@ -518,15 +518,120 @@ class GeneralDataset(Dataset):
         return x_new
 
 
-    def sample_normalized(self, dist_name, std = None, mean = None, radius = None):
-        """
-        Sample from the requested distribution, then optionally apply
-        curvature-radius normalization with geodesic dilation
-        """
-        x = self.sample(dist_name, std = std, mean = mean, radius = radius)
-        x = self.normalize_sample_by_curvature(x)
+    def normalize_tangent(self, z):
+        if not self.gcfg.get("normalize_tangent_distributions", False):
+            return z
+        if self.manifold_name == "euclidean":
+            return z
+        return z / (self.curvature ** 0.5)
+
+
+    def tangent_to_manifold(self, z):
+        single = False
+        if z.ndim == 1:
+            z = z.unsqueeze(0)
+            single = True
+        if self.manifold_name == "euclidean":
+            x = z
+        else:
+            origin = self.reference_origin.to(device = z.device, dtype = z.dtype).view(1, -1)
+            origin = origin.expand_as(z)
+
+            if hasattr(self.manifold, "proju"):
+                z = self.manifold.proju(origin, z)
+            if self.manifold_name == "poincare":
+                lambda_o = self.manifold.lambda_x(origin, keepdim =True)
+                z = z / lambda_o
+            x = self.manifold.expmap(origin, z)
+            if hasattr(self.manifold, "projx"):
+                x = self.manifold.projx(x)
+
+        if single:
+            return x.squeeze(0)
         return x
-            
+
+
+    def _sample_checkerboard_tangent(self):
+        xy = self._checkerboard._checkerboard2d()
+        xy = xy * self._checkerboard.tangent_scale
+        z = torch.zeros(self.dim, dtype = xy.dtype, device = xy.device)
+
+        if self.manifold_name == "sphere":
+            if self.dim < 3:
+                raise ValueError("sphere checkerboard requires ambient dim >= 3 for a 2D tangent plane")
+            z[1:3] = xy
+        else:
+            z[:2] = xy
+        return z
+
+
+    def sample_tangent(self, dist_name, std = None, mean = None, radius = None):
+        if std is None:
+            std = 1.0
+        if mean is None:
+            mean = torch.zeros(self.dim, dtype = torch.float32)
+        elif not torch.is_tensor(mean):
+            mean = torch.tensor(mean, dtype = torch.float32)
+        else:
+            mean = mean.detach().clone().float()
+        if not torch.is_tensor(std) and not isinstance(std, (float, int)):
+            std = torch.tensor(std, dtype = torch.float32)
+
+        dist_key = self._dist_key(dist_name)
+
+        if dist_key == "gaussian":
+            eps = torch.randn(self.dim, dtype = mean.dtype, device = mean.device) * float(std)
+            return mean + eps
+        elif dist_key == "gaussian-ring":
+            if radius is None:
+                raise ValueError("gaussian-ring requires radius")
+
+            direction = torch.randn(self.dim, dtype = mean.dtype, device = mean.device)
+            direction = direction / torch.clamp(torch.norm(direction), min = 1e-8)
+
+            radial_noise = torch.randn((), dtype = mean.dtype, device = mean.device) * float(std)
+            r = float(radius) + radial_noise
+
+            return mean + r * direction
+
+        elif dist_key == "mog":
+            if mean.ndim != 2:
+                raise ValueError("MoG mean must have shape (K, dim)")
+
+            K = mean.shape[0]
+
+            weights_cfg = self.gcfg.get("weights", None)
+            if weights_cfg is None:
+                weights = torch.ones(K, dtype = torch.float32, device = mean.device) / K
+            else:
+                weights = torch.tensor(weights_cfg, dtype = torch.float32, device = mean.device)
+                weights = weights / weights.sum()
+
+            k = torch.multinomial(weights, 1).item()
+
+            if torch.is_tensor(std):
+                s = float(std[k])
+            elif isinstance(std, (list, tuple)):
+                s = float(std[k])
+            else:
+                s = float(std)
+
+            eps = torch.randn(self.dim, dtype = mean.dtype, device = mean.device) * s
+            return mean[k] + eps
+
+        elif dist_key == "checkerboard":
+            if self._checkerboard is None:
+                raise RuntimeError("CheckerboardDataset not initialized")
+            return self._sample_checkerboard_tangent()
+
+        else:
+            raise ValueError(f"Unknown tangent-space distribution: {dist_name}")
+
+    def sample_normalized(self, dist_name, std = None, mean = None, radius = None):
+        z = self.sample_tangent(dist_name, std = std, mean = mean, radius = radius)
+        z = self.normalize_tangent(z)
+        x = self.tangent_to_manifold(z)
+        return x            
 
     def sample(self, dist_name, std = None, mean = None, radius = None):
         if std is None:
