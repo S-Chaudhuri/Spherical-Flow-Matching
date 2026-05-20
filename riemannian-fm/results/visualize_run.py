@@ -563,8 +563,8 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
         fig.add_subplot(151, projection="3d"),
         fig.add_subplot(152, projection="3d"),
         fig.add_subplot(153, projection="3d"),
-        fig.add_subplot(154, projection="mollweide"),
-        fig.add_subplot(155, projection="mollweide"),
+        fig.add_subplot(154, projection="3d"),
+        fig.add_subplot(155, projection="3d"),
     ]
 
     # Draw the wireframe sphere on all panels
@@ -575,7 +575,7 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
     ys = R * np.sin(u) * np.sin(v)
     zs = R * np.cos(v)
 
-    for ax in axes[:3]:
+    for ax in axes:
         ax.plot_wireframe(xs, ys, zs, color="lightblue", alpha=0.1, linewidth=0.5)
         ax.set_xlim([-R, R])
         ax.set_ylim([-R, R])
@@ -662,153 +662,116 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
         return np.stack([theta, phi], axis=1)
 
 
-    def sphere_kde(points, resolution=200, bw_method=None):
-        sph = to_spherical(points)
+    def sphere_kde_cartesian(points, resolution=80, kappa=25.0):
+        """
+        Spherical KDE using a von Mises–Fisher-style kernel.
 
-        theta = sph[:, 0]                     # longitude
-        phi   = sph[:, 1]                    # polar angle
+        points: (N,3) points on sphere
+        kappa: concentration parameter
+            larger = sharper density
+        """
 
-        lat = np.pi / 2 - phi                # latitude
+        # Normalize points onto sphere
+        points = points / np.linalg.norm(points, axis=1, keepdims=True)
 
-        # periodic longitude augmentation
-        theta_aug = np.concatenate([
-            theta - 2*np.pi,
-            theta,
-            theta + 2*np.pi,
-        ])
+        phi = np.linspace(0, np.pi, resolution)
+        theta = np.linspace(0, 2 * np.pi, resolution)
 
-        lat_aug = np.concatenate([
-            lat,
-            lat,
-            lat,
-        ])
+        theta, phi = np.meshgrid(theta, phi)
 
-        kde = gaussian_kde(
-            np.vstack([theta_aug, lat_aug]),
-            bw_method=bw_method,
+        xs = R * np.cos(theta) * np.sin(phi)
+        ys = R * np.sin(theta) * np.sin(phi)
+        zs = R * np.cos(phi)
+
+        # Grid points on sphere
+        grid_points = np.stack(
+            [
+                xs.ravel(),
+                ys.ravel(),
+                zs.ravel(),
+            ],
+            axis=1,
         )
 
-        gx, gy = np.mgrid[
-            -np.pi:np.pi:resolution*1j,
-            -np.pi/2:np.pi/2:resolution*1j,
-        ]
+        # Normalize grid points
+        grid_points = grid_points / np.linalg.norm(
+            grid_points,
+            axis=1,
+            keepdims=True,
+        )
 
-        z = kde(np.vstack([
-            gx.ravel(),
-            gy.ravel(),
-        ])).reshape(resolution, resolution)
+        # Cosine similarity = spherical inner product
+        dots = grid_points @ points.T
 
-        # cosine(latitude) area correction
-        area = np.cos(gy)
+        # von Mises–Fisher-like kernel
+        density = np.exp(kappa * dots).sum(axis=1)
 
-        z = z / np.maximum(area, 1e-2)
+        # Normalize
+        density /= density.max() + 1e-8
 
-        # stabilize outliers
-        z = np.clip(z, 0, np.nanpercentile(z, 99))
+        density = density.reshape(xs.shape)
 
-        return gx, gy, z
+        return xs, ys, zs, density
 
 
-    gx, gy, z_true = sphere_kde(d["x1"])
-    gx, gy, z_hat = sphere_kde(d["x1_hat"])
+    xs, ys, zs, z_true = sphere_kde_cartesian(d["x1"])
+    _, _, _, z_hat = sphere_kde_cartesian(d["x1_hat"])
 
-    z_true_based = z_true - np.nanmin(z_true)
-
-    z_hat_based = z_hat - np.nanmin(z_hat)
+    z_true = np.nan_to_num(z_true)
+    z_hat = np.nan_to_num(z_hat)
 
     vmax = max(
-        np.nanmax(z_true_based),
-        np.nanmax(z_hat_based),
+        np.nanmax(z_true),
+        np.nanmax(z_hat),
         1e-8,
     )
 
-    #KDE overlay in spherical coordinates (theta, phi)
-    axes[3].contourf(
-        gx,
-        gy,
-        z_true,
-        levels=6,
-        colors=["blue"],
-        alpha=0.2,
+    # Panel 4: KDE true/generated overlay
+    axes[3].plot_surface(
+        xs,
+        ys,
+        zs,
+        facecolors=plt.cm.Blues(z_true / vmax),
+        rstride=1,
+        cstride=1,
+        linewidth=0,
+        antialiased=False,
+        alpha=0.7,
     )
 
-    axes[3].contour(
-        gx,
-        gy,
-        z_true,
-        levels=6,
-        colors=["blue"],
-        linewidths=0.8,
+    axes[3].plot_surface(
+        xs,
+        ys,
+        zs,
+        facecolors=plt.cm.Reds(z_hat / vmax),
+        rstride=1,
+        cstride=1,
+        linewidth=0,
+        antialiased=False,
+        alpha=0.4,
     )
 
-    axes[3].contourf(
-        gx,
-        gy,
-        z_hat,
-        levels=6,
-        colors=["red"],
-        alpha=0.2,
-    )
+    axes[3].set_title("Density Estimation (KDE)")
+    axes[3].set_box_aspect([1, 1, 1])
+    axes[3].axis("off")
 
-    axes[3].contour(
-        gx,
-        gy,
-        z_hat,
-        levels=6,
-        colors=["red"],
-        linewidths=0.8,
-    )
-
-    axes[3].set_title(
-        "Density Estimation (KDE): True vs Generated"
-    )
-
-    axes[3].grid(True, alpha=0.3)
-
-    axes[3].legend(
-        handles=[
-            plt.Line2D(
-                [0],
-                [0],
-                color="blue",
-                label="True",
-            ),
-            plt.Line2D(
-                [0],
-                [0],
-                color="red",
-                label="Generated",
-            ),
-        ],
-        loc="upper right",
-    )
-
-
-   #Difference
+    # Panel 5: KDE difference
     z_diff = (z_true - z_hat) / vmax
 
-    im = axes[4].contourf(
-        gx,
-        gy,
-        z_diff,
-        levels=12,
-        cmap="RdBu",
-        vmin=-1,
-        vmax=1,
+    surf = axes[4].plot_surface(
+        xs,
+        ys,
+        zs,
+        facecolors=plt.cm.RdBu((z_diff + 1) / 2),
+        rstride=1,
+        cstride=1,
+        linewidth=0,
+        antialiased=False,
     )
 
-    axes[4].set_title(
-        "KDE Difference (True − Generated)"
-    )
-
-    axes[4].grid(True, alpha=0.3)
-
-    plt.colorbar(
-        im,
-        ax=axes[4],
-        fraction=0.046,
-        pad=0.04,
-    )
+    axes[4].set_title("KDE Difference (True − Generated)")
+    axes[4].set_box_aspect([1, 1, 1])
+    axes[4].axis("off")
 
 
     
