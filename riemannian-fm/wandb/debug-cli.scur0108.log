@@ -13234,3 +13234,695 @@ OSError: [Errno 122] Disk quota exceeded: '/gpfs/home6/scur0108/DL2_project/Sphe
 	use_wandb: True
 2026-05-20 10:09:42 INFO About to run command: python train.py experiment=general_fm general.curvature=0 general.dim=2 general.manifold=euclidean general.x0_dist=gaussian general.x1_dist=gaussian seed=50 use_wandb=True
 2026-05-20 10:09:47 INFO Running runs: ['qlnqc94v']
+2026-05-21 00:14:32 INFO Running runs: []
+2026-05-21 00:14:33 INFO Agent received command: run
+2026-05-21 00:14:33 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:14:33 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:14:38 INFO Running runs: ['31l2c12i']
+2026-05-21 00:16:36 INFO Cleaning up finished run: 31l2c12i
+2026-05-21 00:16:37 INFO Agent received command: run
+2026-05-21 00:16:37 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:16:37 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:16:42 INFO Running runs: ['yofqj7or']
+2026-05-21 00:18:40 INFO Cleaning up finished run: yofqj7or
+2026-05-21 00:18:41 INFO Agent received command: run
+2026-05-21 00:18:41 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:18:41 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:18:46 INFO Running runs: ['cfgjrc6v']
+2026-05-21 00:20:34 INFO Cleaning up finished run: cfgjrc6v
+2026-05-21 00:20:40 INFO Running runs: []
+2026-05-21 00:30:17 INFO Agent received command: exit
+2026-05-21 00:30:17 INFO Received exit command. Killing runs and quitting.
+2026-05-21 00:30:18 INFO Running runs: []
+2026-05-21 00:30:19 INFO Agent received command: run
+2026-05-21 00:30:19 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:30:19 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:30:24 INFO Running runs: ['uft5yjua']
+2026-05-21 00:32:07 INFO Cleaning up finished run: uft5yjua
+2026-05-21 00:32:08 INFO Agent received command: run
+2026-05-21 00:32:08 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:32:08 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:32:13 INFO Running runs: ['s34wwbkk']
+2026-05-21 00:33:40 INFO Cleaning up finished run: s34wwbkk
+2026-05-21 00:33:41 INFO Agent received command: run
+2026-05-21 00:33:41 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:33:41 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:33:46 INFO Running runs: ['4n4x8a0h']
+2026-05-21 00:35:09 INFO Cleaning up finished run: 4n4x8a0h
+2026-05-21 00:35:09 INFO Agent received command: run
+2026-05-21 00:35:09 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:35:09 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:35:14 INFO Running runs: ['cnh99cir']
+2026-05-21 00:35:47 INFO Running runs: []
+2026-05-21 00:35:47 INFO Agent received command: run
+2026-05-21 00:35:47 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:35:47 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:35:52 INFO Running runs: ['dclxzpy3']
+2026-05-21 00:36:07 ERROR Traceback (most recent call last):
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/normalize.py", line 28, in wrapper
+    return func(*args, **kwargs)
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/sdk/internal/internal_api.py", line 877, in sweep
+    raise ValueError(f"Sweep {entity}/{project}/{sweep} not found")
+ValueError: Sweep floris-de-kam-university-of-amsterdam/ManiFM/wuqt30b7 not found
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/cli/cli.py", line 150, in wrapper
+    return func(*args, **kwargs)
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/cli/cli.py", line 2063, in agent
+    wandb_agent.agent(
+    ~~~~~~~~~~~~~~~~~^
+        sweep_id,
+        ^^^^^^^^^
+    ...<3 lines>...
+        forward_signals=forward_signals,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/wandb_agent.py", line 669, in agent
+    return run_agent(
+        sweep_id,
+    ...<5 lines>...
+        forward_signals=forward_signals,
+    )
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/wandb_agent.py", line 622, in run_agent
+    agent.run()
+    ~~~~~~~~~^^
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/wandb_agent.py", line 277, in run
+    sweep_obj = self._api.sweep(self._sweep_id, "{}")
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/internal.py", line 125, in sweep
+    return self.api.sweep(*args, **kwargs)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/normalize.py", line 82, in wrapper
+    raise CommError(message, err).with_traceback(sys.exc_info()[2])
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/normalize.py", line 28, in wrapper
+    return func(*args, **kwargs)
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/sdk/internal/internal_api.py", line 877, in sweep
+    raise ValueError(f"Sweep {entity}/{project}/{sweep} not found")
+wandb.errors.errors.CommError: Sweep floris-de-kam-university-of-amsterdam/ManiFM/wuqt30b7 not found
+Traceback (most recent call last):
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/normalize.py", line 28, in wrapper
+    return func(*args, **kwargs)
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/sdk/internal/internal_api.py", line 877, in sweep
+    raise ValueError(f"Sweep {entity}/{project}/{sweep} not found")
+ValueError: Sweep floris-de-kam-university-of-amsterdam/ManiFM/wuqt30b7 not found
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/cli/cli.py", line 150, in wrapper
+    return func(*args, **kwargs)
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/cli/cli.py", line 2063, in agent
+    wandb_agent.agent(
+    ~~~~~~~~~~~~~~~~~^
+        sweep_id,
+        ^^^^^^^^^
+    ...<3 lines>...
+        forward_signals=forward_signals,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/wandb_agent.py", line 669, in agent
+    return run_agent(
+        sweep_id,
+    ...<5 lines>...
+        forward_signals=forward_signals,
+    )
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/wandb_agent.py", line 622, in run_agent
+    agent.run()
+    ~~~~~~~~~^^
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/wandb_agent.py", line 277, in run
+    sweep_obj = self._api.sweep(self._sweep_id, "{}")
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/internal.py", line 125, in sweep
+    return self.api.sweep(*args, **kwargs)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/normalize.py", line 82, in wrapper
+    raise CommError(message, err).with_traceback(sys.exc_info()[2])
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/apis/normalize.py", line 28, in wrapper
+    return func(*args, **kwargs)
+  File "/home/scur0108/.local/lib/python3.13/site-packages/wandb/sdk/internal/internal_api.py", line 877, in sweep
+    raise ValueError(f"Sweep {entity}/{project}/{sweep} not found")
+wandb.errors.errors.CommError: Sweep floris-de-kam-university-of-amsterdam/ManiFM/wuqt30b7 not found
+2026-05-21 00:36:52 INFO Cleaning up finished run: cnh99cir
+2026-05-21 00:36:53 INFO Agent received command: run
+2026-05-21 00:36:53 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:36:53 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:36:58 INFO Running runs: ['1eyaqvfc']
+2026-05-21 00:37:25 INFO Cleaning up finished run: dclxzpy3
+2026-05-21 00:37:26 INFO Agent received command: run
+2026-05-21 00:37:26 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:37:26 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:37:31 INFO Running runs: ['y0e8end6']
+2026-05-21 00:38:31 INFO Cleaning up finished run: 1eyaqvfc
+2026-05-21 00:38:32 INFO Agent received command: run
+2026-05-21 00:38:32 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:38:32 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:38:37 INFO Running runs: ['3vdk0ti1']
+2026-05-21 00:39:09 INFO Cleaning up finished run: y0e8end6
+2026-05-21 00:39:10 INFO Agent received command: run
+2026-05-21 00:39:10 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:39:10 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:39:15 INFO Running runs: ['n20gt80s']
+2026-05-21 00:40:10 INFO Cleaning up finished run: 3vdk0ti1
+2026-05-21 00:40:11 INFO Agent received command: run
+2026-05-21 00:40:11 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:40:11 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:40:16 INFO Running runs: ['z4d0a5eq']
+2026-05-21 00:40:38 INFO Cleaning up finished run: n20gt80s
+2026-05-21 00:40:38 INFO Agent received command: run
+2026-05-21 00:40:38 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:40:38 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:40:43 INFO Running runs: ['em7x9kym']
+2026-05-21 00:41:54 INFO Cleaning up finished run: z4d0a5eq
+2026-05-21 00:41:55 INFO Agent received command: run
+2026-05-21 00:41:55 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:41:55 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:41:56 INFO Cleaning up finished run: em7x9kym
+2026-05-21 00:41:56 INFO Agent received command: run
+2026-05-21 00:41:56 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:41:56 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:42:00 INFO Running runs: ['3hu4i417']
+2026-05-21 00:42:01 INFO Running runs: ['z1o9846c']
+2026-05-21 00:43:24 INFO Cleaning up finished run: z1o9846c
+2026-05-21 00:43:25 INFO Agent received command: run
+2026-05-21 00:43:25 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:43:25 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:43:30 INFO Running runs: ['yazwx3s3']
+2026-05-21 00:43:33 INFO Cleaning up finished run: 3hu4i417
+2026-05-21 00:43:34 INFO Agent received command: run
+2026-05-21 00:43:34 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 2
+	general.manifold: poincare
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:43:34 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=2 general.manifold=poincare general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:43:39 INFO Running runs: ['orgcrytm']
+2026-05-21 00:44:52 INFO Cleaning up finished run: yazwx3s3
+2026-05-21 00:44:53 INFO Agent received command: run
+2026-05-21 00:44:53 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:44:53 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:44:58 INFO Running runs: ['mhl1gyxt']
+2026-05-21 00:45:11 INFO Cleaning up finished run: orgcrytm
+2026-05-21 00:45:12 INFO Agent received command: run
+2026-05-21 00:45:12 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:45:12 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:45:17 INFO Running runs: ['xizsk685']
+2026-05-21 00:46:26 INFO Cleaning up finished run: mhl1gyxt
+2026-05-21 00:46:26 INFO Agent received command: run
+2026-05-21 00:46:26 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:46:26 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:46:31 INFO Running runs: ['awuot95y']
+2026-05-21 00:46:50 INFO Cleaning up finished run: xizsk685
+2026-05-21 00:46:51 INFO Agent received command: run
+2026-05-21 00:46:51 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:46:51 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:46:56 INFO Running runs: ['og7ktuvc']
+2026-05-21 00:47:54 INFO Cleaning up finished run: awuot95y
+2026-05-21 00:47:55 INFO Agent received command: run
+2026-05-21 00:47:55 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: sphere
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:47:55 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=sphere general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:48:00 INFO Running runs: ['ucnsyrzd']
+2026-05-21 00:48:24 INFO Cleaning up finished run: og7ktuvc
+2026-05-21 00:48:24 INFO Agent received command: run
+2026-05-21 00:48:24 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:48:24 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:48:29 INFO Running runs: ['cfygt7t4']
+2026-05-21 00:49:27 INFO Cleaning up finished run: ucnsyrzd
+2026-05-21 00:49:28 INFO Agent received command: run
+2026-05-21 00:49:28 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:49:28 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:49:33 INFO Running runs: ['yzwvkgct']
+2026-05-21 00:49:57 INFO Cleaning up finished run: cfygt7t4
+2026-05-21 00:49:58 INFO Agent received command: run
+2026-05-21 00:49:58 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:49:58 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:50:03 INFO Running runs: ['6442coja']
+2026-05-21 00:50:50 INFO Cleaning up finished run: yzwvkgct
+2026-05-21 00:50:52 INFO Agent received command: run
+2026-05-21 00:50:52 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:50:52 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:50:57 INFO Running runs: ['m585f68j']
+2026-05-21 00:51:46 INFO Cleaning up finished run: 6442coja
+2026-05-21 00:51:46 INFO Agent received command: run
+2026-05-21 00:51:46 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:51:46 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:51:51 INFO Running runs: ['h6hotbii']
+2026-05-21 00:52:04 INFO Cleaning up finished run: m585f68j
+2026-05-21 00:52:04 INFO Agent received command: run
+2026-05-21 00:52:04 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:52:04 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:52:09 INFO Running runs: ['r37bwyj0']
+2026-05-21 00:53:27 INFO Cleaning up finished run: r37bwyj0
+2026-05-21 00:53:28 INFO Agent received command: run
+2026-05-21 00:53:28 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:53:28 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:53:33 INFO Running runs: ['wcav8onx']
+2026-05-21 00:53:35 INFO Cleaning up finished run: h6hotbii
+2026-05-21 00:53:35 INFO Agent received command: run
+2026-05-21 00:53:35 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:53:35 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:53:40 INFO Running runs: ['aa544j3w']
+2026-05-21 00:54:40 INFO Cleaning up finished run: wcav8onx
+2026-05-21 00:54:40 INFO Agent received command: run
+2026-05-21 00:54:40 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:54:40 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:54:45 INFO Running runs: ['3oxtnhz5']
+2026-05-21 00:55:23 INFO Cleaning up finished run: aa544j3w
+2026-05-21 00:55:24 INFO Agent received command: run
+2026-05-21 00:55:24 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:55:24 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:55:29 INFO Running runs: ['q584y4k3']
+2026-05-21 00:55:58 INFO Cleaning up finished run: 3oxtnhz5
+2026-05-21 00:55:58 INFO Agent received command: run
+2026-05-21 00:55:58 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 4
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:55:58 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=4 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:56:04 INFO Running runs: ['vhp0s96v']
+2026-05-21 00:57:07 INFO Cleaning up finished run: q584y4k3
+2026-05-21 00:57:08 INFO Agent received command: run
+2026-05-21 00:57:08 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:57:08 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:57:13 INFO Running runs: ['7h2n1i8i']
+2026-05-21 00:57:16 INFO Cleaning up finished run: vhp0s96v
+2026-05-21 00:57:16 INFO Agent received command: run
+2026-05-21 00:57:16 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 00:57:16 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:57:21 INFO Running runs: ['k9t5jo5s']
+2026-05-21 00:58:39 INFO Cleaning up finished run: k9t5jo5s
+2026-05-21 00:58:40 INFO Agent received command: run
+2026-05-21 00:58:40 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 00:58:40 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 00:58:45 INFO Running runs: ['09o2ausy']
+2026-05-21 00:58:51 INFO Cleaning up finished run: 7h2n1i8i
+2026-05-21 00:58:52 INFO Agent received command: run
+2026-05-21 00:58:52 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 3
+	general.manifold: poincare
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 00:58:52 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=3 general.manifold=poincare general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 00:58:57 INFO Running runs: ['w1kf0goz']
+2026-05-21 01:00:07 INFO Cleaning up finished run: 09o2ausy
+2026-05-21 01:00:08 INFO Agent received command: run
+2026-05-21 01:00:08 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 4
+	general.manifold: sphere
+	general.radius_x1: 8
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 50
+	use_wandb: True
+2026-05-21 01:00:08 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=4 general.manifold=sphere general.radius_x1=8 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=50 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 01:00:13 INFO Running runs: ['1rjmz6qz']
+2026-05-21 01:00:35 INFO Cleaning up finished run: w1kf0goz
+2026-05-21 01:00:36 INFO Agent received command: run
+2026-05-21 01:00:36 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 16
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 01:00:36 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=16 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 01:00:41 INFO Running runs: ['tqfevwqo']
+2026-05-21 01:01:25 INFO Cleaning up finished run: 1rjmz6qz
+2026-05-21 01:01:26 INFO Agent received command: run
+2026-05-21 01:01:26 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 17
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 34
+	use_wandb: True
+2026-05-21 01:01:26 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=17 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=34 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 01:01:31 INFO Running runs: ['pgyw3eok']
+2026-05-21 01:02:13 INFO Cleaning up finished run: tqfevwqo
+2026-05-21 01:02:14 INFO Agent received command: run
+2026-05-21 01:02:14 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 16
+	general.manifold: poincare
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 01:02:14 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=16 general.manifold=poincare general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/poincare
+2026-05-21 01:02:19 INFO Running runs: ['065cwdd7']
+2026-05-21 01:02:33 INFO Cleaning up finished run: pgyw3eok
+2026-05-21 01:02:33 INFO Agent received command: run
+2026-05-21 01:02:33 INFO Agent starting run with config:
+	experiment: general_fm
+	general.curvature: 1
+	general.dim: 17
+	general.manifold: sphere
+	general.radius_x1: 1
+	general.x0_dist: gaussian
+	general.x1_dist: gaussian-ring
+	seed: 42
+	use_wandb: True
+2026-05-21 01:02:33 INFO About to run command: python train.py experiment=general_fm general.curvature=1 general.dim=17 general.manifold=sphere general.radius_x1=1 general.x0_dist=gaussian general.x1_dist=gaussian-ring seed=42 use_wandb=True hydra.run.dir=outputs/runs/gaussian_ring/sphere
+2026-05-21 01:02:38 INFO Running runs: ['423zzyjn']
