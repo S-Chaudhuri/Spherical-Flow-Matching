@@ -918,10 +918,13 @@ class ManifoldFMLitModule(pl.LightningModule):
             # batched geodesic evaluation + derivative w.r.t. time.
             shooting_tangent_vec = self.manifold.logmap(x0, x1)
 
-            def path(t):
-                return self.manifold.expmap(x0, t * shooting_tangent_vec)
+            # def path(t):
+            #     return self.manifold.expmap(x0, t * shooting_tangent_vec)
 
-            x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
+            # x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
+            x_t = self.manifold.expmap(x0, t * shooting_tangent_vec)
+            u_t = self.manifold.transp(x0, x_t, shooting_tangent_vec)
+
             x_t = x_t.reshape(N, self.dim)
             u_t = u_t.reshape(N, self.dim)
 

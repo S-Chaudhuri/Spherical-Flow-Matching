@@ -311,26 +311,23 @@ class SphereCurvature(Manifold):
         return self.uniform_logprob(*args, **kwargs)
     
     def wrapped_gaussian_ring(self, dim, mean, std, radius):
-        # device = mean.device
+        # noise = torch.randn(dim, device=mean.device) * std
+        # v_noise = self.proju(mean, noise)
+        # gaussian_sample = self.expmap(mean, v_noise)  # Gaussian spread around mean
 
-        # z = torch.randn_like(mean)
+        # z = torch.randn(dim, device=mean.device)
+        # v = self.proju(gaussian_sample, z)
+        # v = v / (v.norm() + 1e-8)
+        # sample = self.expmap(gaussian_sample, radius * v)
 
-        # v = self.proju(mean, z)
+        # return sample
+        device = mean.device
 
-        # v = v / (v.norm(dim=-1, keepdim=True) + EPS[v.dtype])
+        z = torch.randn(dim, device=device)
+        u = self.proju(mean, z)            # project onto tangent space at mean
+        u = u / u.norm()                   # unit tangent direction
 
-        # rho = torch.randn((), device=device) * std + radius
+        r = torch.normal(radius, std, size=(1,), device=device)
+        u = u * r                         
 
-        # u = rho * v
-        # sample = self.expmap(mean, u)
-
-        noise = torch.randn(dim, device=mean.device) * std
-        v_noise = self.proju(mean, noise)
-        gaussian_sample = self.expmap(mean, v_noise)  # Gaussian spread around mean
-
-        z = torch.randn(dim, device=mean.device)
-        v = self.proju(gaussian_sample, z)
-        v = v / (v.norm() + 1e-8)
-        sample = self.expmap(gaussian_sample, radius * v)
-
-        return sample
+        return self.expmap(mean, u)        # returns ambient R^d point on the sphere
