@@ -392,7 +392,7 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
         format_title(meta, f"1D Spherical Flow Matching (S1 in R2, R={R:.2f})"), fontsize=12, y=1.05
     )
 
-    for ax in axes:
+    for ax in axes[:3]:
         # Draw the 2D circular boundary
         ax.add_patch(
             plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
@@ -402,9 +402,9 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
         ax.set_aspect("equal")
         ax.axis("off")
 
-    # for ax in axes[3:]:
-    #     ax.axis("on")
-    #     ax.set_aspect("auto")
+    for ax in axes[3:]:
+        ax.axis("on")
+        ax.set_aspect("auto")
     # Panel 1: Distributions
     axes[0].scatter(d["x0"][:, 0], d["x0"][:, 1], c="gray", alpha=0.5, label="Source", s=10)
     axes[0].scatter(d["x1"][:, 0], d["x1"][:, 1], c="blue", alpha=0.5, label="True Target", s=15)
@@ -471,71 +471,70 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
     axes[2].set_ylim([-R * 1.2, R * 1.2])
     axes[2].set_aspect("equal")
     axes[2].axis("off")
-    # Panel 4: KDE overlay in angle space
+# Panel 4 & 5: 1D KDE in angle space, wrapped onto circle as filled band
     def angle_kde(points, resolution=500):
         angles = np.arctan2(points[:, 1], points[:, 0])
         kde = gaussian_kde(angles)
         grid = np.linspace(-np.pi, np.pi, resolution)
-        z = kde(grid)
-        return grid, z
+        return grid, kde(grid)
 
     grid, z_true_1d = angle_kde(d["x1"])
     grid, z_hat_1d  = angle_kde(d["x1_hat"])
 
-    axes[3].plot(grid, z_true_1d, color="blue", label="True")
-    axes[3].plot(grid, z_hat_1d,  color="red",  label="Generated")
-    axes[3].fill_between(grid, z_true_1d, alpha=0.2, color="blue")
-    axes[3].fill_between(grid, z_hat_1d,  alpha=0.2, color="red")
-    axes[3].set_title("Density Estimation (KDE): True vs Generated")
-    axes[3].legend(loc="upper right")
-    axes[3].set_xlabel("angle θ")
-    # axes[3].set_aspect("equal")
-    # axes[3].set_aspect("auto")
-    # axes[3].axis("on")  # need axes on for the 1D plot
-    axes[3].add_patch(
-            plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
-        )
-    axes[3].set_xlim([-R * 1.2, R * 1.2])
-    axes[3].set_ylim([-R * 1.2, R * 1.2])
-    axes[3].set_aspect("equal")
-    axes[3].axis("on")
+    def draw_kde_band(ax, grid, z, color, scale=0.4, alpha_fill=0.3, lw=1.5):
+        # Subtract the minimum so the band sits at zero away from peaks
+        z_based = z - np.min(z)
+        z_norm  = (z_based / np.nanmax(z_based)) * scale * R
+        r_outer = R + z_norm
+        x_inner = R       * np.cos(grid)
+        y_inner = R       * np.sin(grid)
+        x_outer = r_outer * np.cos(grid)
+        y_outer = r_outer * np.sin(grid)
+        x_poly  = np.concatenate([x_outer, x_inner[::-1]])
+        y_poly  = np.concatenate([y_outer, y_inner[::-1]])
+        ax.fill(x_poly, y_poly, color=color, alpha=alpha_fill)
+        ax.plot(x_outer, y_outer, color=color, linewidth=lw)
 
-    # Panel 5: Difference
+    for ax in axes[3:]:
+        ax.add_patch(plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--"))
+        ax.set_xlim([-R * 1.6, R * 1.6])
+        ax.set_ylim([-R * 1.6, R * 1.6])
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+    draw_kde_band(axes[3], grid, z_true_1d, color="blue")
+    draw_kde_band(axes[3], grid, z_hat_1d,  color="red")
+    axes[3].set_title("Density Estimation (KDE): True vs Generated")
+    axes[3].legend(handles=[
+        plt.Line2D([0], [0], color="blue", label="True"),
+        plt.Line2D([0], [0], color="red",  label="Generated"),
+    ], loc="upper right")
+
     vmax = max(np.nanmax(np.abs(z_true_1d)), np.nanmax(np.abs(z_hat_1d)))
     if not np.isfinite(vmax) or vmax == 0:
         axes[4].set_title("KDE Difference (unavailable)")
     else:
-        z_diff = (z_true_1d - z_hat_1d) / vmax
-        axes[4].fill_between(grid, z_diff, where=z_diff > 0, color="blue", alpha=0.4, label="Under-generated")
-        axes[4].fill_between(grid, z_diff, where=z_diff < 0, color="red",  alpha=0.4, label="Over-generated")
-        axes[4].axhline(0, color="black", linewidth=0.8)
+        z_diff = (z_true_1d - z_hat_1d)   # +1 under, -1 over
+        scale = 0.4 * R
+        x_ref = R * np.cos(grid)
+        y_ref = R * np.sin(grid)
+
+        # Split into positive (under-generated) and negative (over-generated) regions
+        for sign, color in [(1, "blue"), (-1, "red")]:
+            z_signed = np.where(z_diff * sign > 0, z_diff * sign, 0.0)
+            r_band   = R + z_signed * scale / np.nanmax(np.abs(z_diff))
+            x_poly   = np.concatenate([r_band * np.cos(grid), x_ref[::-1]])
+            y_poly   = np.concatenate([r_band * np.sin(grid), y_ref[::-1]])
+            axes[4].fill(x_poly, y_poly, color=color, alpha=0.4)
+
+        # Outline of full diff curve
+        r_diff = R + z_diff * scale
+        axes[4].plot(r_diff * np.cos(grid), r_diff * np.sin(grid), color="gray", linewidth=0.8)
         axes[4].set_title("KDE Difference (True − Generated)")
-        axes[4].legend(loc="upper right")
-        axes[4].set_xlabel("angle θ")
-        # axes[4].set_aspect("equal")
-        # axes[4].set_aspect("auto")
-        # axes[4].axis("on")
-        axes[4].add_patch(
-            plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
-        )
-        axes[4].set_xlim([-R * 1.2, R * 1.2])
-        axes[4].set_ylim([-R * 1.2, R * 1.2])
-        axes[4].set_aspect("equal")
-        axes[4].axis("off")
-
-
-    #Difference of KDEs
-    # z_diff = z_true -z_hat # positive: under generates, negetive: over generates
-    # vmax = np.nanmax(np.abs(z_diff))
-    # vmax = max(np.nanmax(np.abs(z_true)), np.nanmax(np.abs(z_hat))) # positive: under generates, negetive: over generates
-    # z_diff = (z_true - z_hat) 
-    # if not np.isfinite(vmax) or vmax == 0:
-    #     axes[4].set_title("KDE Difference (unavailable)")
-    # else:
-    #     z_diff= z_diff/vmax
-    #     im = axes[4].contourf(gx, gy, z_diff, levels=12, cmap="RdBu", vmin=-1, vmax=1)
-    #     axes[4].set_title("KDE Difference (True − Generated)")
-    #     plt.colorbar(im, ax=axes[4], fraction=0.046, pad=0.04)
+        axes[4].legend(handles=[
+            plt.Line2D([0], [0], color="blue", label="Under-generated"),
+            plt.Line2D([0], [0], color="red",  label="Over-generated"),
+        ], loc="upper right")
 
     plt.tight_layout()
     if save_path:
