@@ -61,31 +61,22 @@ class PoincareBall(geoopt_PoincareBall):
         """
         Gaussian ring on Poincaré ball.
         """
-        # device = mean.device
+        # noise = torch.randn(dim, device=mean.device) * std
+        # v_noise = self.proju(mean, noise)
+        # gaussian_sample = self.expmap(mean, v_noise)  # Gaussian spread around mean
 
-        # z = torch.randn_like(mean)
-
-        # # tangent projection
-        # v = self.proju(mean, z)
-
-        # # unit tangent direction
-        # v = v / (v.norm(dim=-1, keepdim=True) + 1e-8)
-
-        # # geodesic radius
-        # rho = torch.randn((), device=mean.device) * std + radius
-
-        # u = rho * v
-
-        # # exponential map
-        # sample = self.expmap(mean, u)
-
-        noise = torch.randn(dim, device=mean.device) * std
-        v_noise = self.proju(mean, noise)
-        gaussian_sample = self.expmap(mean, v_noise)  # Gaussian spread around mean
-
-        z = torch.randn(dim, device=mean.device)
-        v = self.proju(gaussian_sample, z)
-        v = v / (v.norm() + 1e-8)
-        sample = self.expmap(gaussian_sample, radius * v)
+        # z = torch.randn(dim, device=mean.device)
+        # v = self.proju(gaussian_sample, z)
+        # v = v / (v.norm() + 1e-8)
+        # sample = self.expmap(gaussian_sample, radius * v)
         
-        return sample
+        # return sample
+
+        z = torch.randn(dim)
+        u = self.proju(mean, z)            # project onto tangent space at mean
+        u = u / u.norm()                   # unit tangent direction
+
+        r = torch.normal(radius, std, size=())
+        u = u * r                         
+
+        return self.expmap(mean, u)      

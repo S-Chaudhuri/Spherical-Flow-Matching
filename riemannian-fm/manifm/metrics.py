@@ -191,15 +191,30 @@ class ManifoldMetricHandler:
         else:
 
             def geodesic_cost(x, y):
-                # do an explicit pairwise comparison
-                x_exp = x.unsqueeze(1)  # (N, 1, D)
-                y_exp = y.unsqueeze(0)  # (1, M, D)
-                
-                # if self.cross_curvature:
-                #    d = self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
-                #    return d ** p
-                # else:
-                return self.manifold.dist(x_exp, y_exp) ** p
+                try:
+                    # do an explicit pairwise comparison
+                    x_exp = x.unsqueeze(1)  # (N, 1, D)
+                    y_exp = y.unsqueeze(0)  # (1, M, D)
+                    
+                    # if self.cross_curvature:
+                    #    d = self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
+                    #    return d ** p
+                    # else:
+                    return self.manifold.dist(x_exp, y_exp) ** p
+
+                except:
+                    n = x.shape[0]
+                    m = y.shape[0]
+                    cost_matrix = torch.zeros((n, m), device=x.device, dtype=x.dtype)
+                    y_exp = y.unsqueeze(0)
+                    chunk_size = 256
+                    
+                    for i in range(0, n, chunk_size):
+                        x_chunk = x[i : i + chunk_size].unsqueeze(1)
+                        cost_matrix[i : i + chunk_size] = self.manifold.dist(x_chunk, y_exp) ** p
+                        
+                    return cost_matrix
+
 
             solver = SamplesLoss(
                 loss = "sinkhorn",
@@ -217,17 +232,37 @@ class ManifoldMetricHandler:
     #! Add decomposed Sinkhorn Knopp for radial and angular
 
 
-    def pairwise_dist(self, x, y):
+    def pairwise_dist(self, x, y, chunk_size=256):
         if self.m_type == "euclidean":
             return torch.cdist(x, y, p=2)
 
-        x_exp = x.unsqueeze(1)
-        y_exp = y.unsqueeze(0)
-        
-        if self.cross_curvature:
-            return self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
-        else:
-            return self.manifold.dist(x_exp, y_exp)
+        try:
+            x_exp = x.unsqueeze(1)
+            y_exp = y.unsqueeze(0)
+            
+            if self.cross_curvature:
+                return self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
+            else:
+                return self.manifold.dist(x_exp, y_exp)
+
+        except:
+            n = x.shape[0]
+            m = y.shape[0]
+            dist_matrix = torch.zeros((n, m), device=x.device, dtype=x.dtype)
+            
+            y_exp = y.unsqueeze(0)  # Shape: (1, M, D)
+            
+            for i in range(0, n, chunk_size):
+                x_chunk = x[i : i + chunk_size].unsqueeze(1)  # Shape: (chunk, 1, D)
+                
+                if self.cross_curvature:
+                    d_chunk = self.scaled_dist(x_chunk, y_exp)
+                else:
+                    d_chunk = self.manifold.dist(x_chunk, y_exp)
+                    
+                dist_matrix[i : i + chunk_size] = d_chunk
+                
+            return dist_matrix
 
 
     def calculate_mmd(self, x_gen, x_real, sigma=None):

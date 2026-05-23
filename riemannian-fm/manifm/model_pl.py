@@ -291,6 +291,13 @@ class ManifoldFMLitModule(pl.LightningModule):
             self._final_eval_path,
             type_name="fixed_eval",
         )
+
+        # If we are not uploading the fixed-eval inputs, delete them after use to save space.
+        if not self.cfg.get("upload_fixed_eval", False):
+            try:
+                os.remove(self._fixed_eval_path)
+            except Exception:
+                pass
     
     @torch.no_grad()
     def visualize(self, batch, force=False):
@@ -858,6 +865,8 @@ class ManifoldFMLitModule(pl.LightningModule):
         return self.rfm_loss_fn(batch)
 
     def rfm_loss_fn(self, batch: torch.Tensor):
+        # print("X0 DEVICE: ", batch["x0"].device)
+        # print("X1 DEVICE: ", batch["x1"].device)
         if isinstance(batch, dict):
             x0 = batch["x0"]
             x1 = batch["x1"]
@@ -909,10 +918,13 @@ class ManifoldFMLitModule(pl.LightningModule):
             # batched geodesic evaluation + derivative w.r.t. time.
             shooting_tangent_vec = self.manifold.logmap(x0, x1)
 
-            def path(t):
-                return self.manifold.expmap(x0, t * shooting_tangent_vec)
+            # def path(t):
+            #     return self.manifold.expmap(x0, t * shooting_tangent_vec)
 
-            x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
+            # x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
+            x_t = self.manifold.expmap(x0, t * shooting_tangent_vec)
+            u_t = self.manifold.transp(x0, x_t, shooting_tangent_vec)
+
             x_t = x_t.reshape(N, self.dim)
             u_t = u_t.reshape(N, self.dim)
 

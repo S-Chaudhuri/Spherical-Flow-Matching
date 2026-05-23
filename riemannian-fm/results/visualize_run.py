@@ -12,12 +12,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
 from scipy.stats import gaussian_kde
+import pandas as pd
 
 
 
 BASE_DIR = Path(__file__).resolve().parent
 
-def get_metrics(run_dir, run_glob, out_dir, default_metrics=None):
+def get_metrics(run_dir, run_glob, out_dir, visualize=False, save=True, default_metrics=None):
     run_dirs = collect_run_dirs(run_dir, run_glob)
 
     if not run_dirs:
@@ -60,13 +61,18 @@ def get_metrics(run_dir, run_glob, out_dir, default_metrics=None):
 
         # --- Plot ---
         label = safe_run_label(paths.run_dir)
-        out_file = out_dir / f'{label}_analysis.pdf'
+        out_file = out_dir / 'plots' / f'{label}_analysis.pdf'
         out_file.parent.mkdir(parents=True, exist_ok=True)
 
         # print(f'\nGenerating plot -> {out_file}')
-        visualize_pt_file(paths.artifacts_pt, run_dir=paths.run_dir, meta=meta, save_path=out_file)
+        if visualize:
+            visualize_pt_file(paths.artifacts_pt, run_dir=paths.run_dir, meta=meta, save_path=out_file)
         metrics_list[label] = metrics
-    return metrics_list
+    
+    if save:
+        pd.DataFrame(metrics_list).T.to_csv(f'{out_dir}/metrics.csv', index=True)
+        
+    return pd.DataFrame(metrics_list).T
 
 def find_visualize_script(start_dir: str | Path) -> Path:
     """Locate visualize_run.py starting from a directory, searching up the tree.
@@ -263,6 +269,7 @@ def plot_euclidean(data_dict, meta, save_path=None):
         plt.show()
 
 
+
 def plot_poincare(data_dict, meta, save_path=None):
     """Replicates the codebase's plot_poincare style with the bounding circle."""
     d = data_dict
@@ -282,6 +289,7 @@ def plot_poincare(data_dict, meta, save_path=None):
     if n_removed > 0: #logging a warning if any points were removed
         print(f"Warning: Removed {n_removed} points from x1_hat that were outside the unit disk.")
     x1_hat = d["x1_hat"][mask]
+
 
     #KDE helper
     def disk_kde(points, resolution=100):
@@ -351,9 +359,13 @@ def plot_poincare(data_dict, meta, save_path=None):
         plt.Line2D([0], [0], color="red", label="Generated")
     ],loc ="upper right")
 
+
+
     #Difference of KDEs
-    z_diff = z_true -z_hat # positive: under generates, negetive: over generates
-    vmax = np.nanmax(np.abs(z_diff))
+    # z_diff = z_true -z_hat # positive: under generates, negetive: over generates
+    # vmax = np.nanmax(np.abs(z_diff))
+    vmax = max(np.nanmax(np.abs(z_true)), np.nanmax(np.abs(z_hat))) # positive: under generates, negetive: over generates
+    z_diff = (z_true - z_hat) 
     if not np.isfinite(vmax) or vmax == 0:
         axes[4].set_title("KDE Difference (unavailable)")
     else:
@@ -375,12 +387,12 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
     curvature = meta.get("curvature", 1.0)
     R = 1.0 / np.sqrt(curvature) if curvature > 0 else 1.0
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, 5, figsize=(30, 6))
     fig.suptitle(
         format_title(meta, f"1D Spherical Flow Matching (S1 in R2, R={R:.2f})"), fontsize=12, y=1.05
     )
 
-    for ax in axes:
+    for ax in axes[:3]:
         # Draw the 2D circular boundary
         ax.add_patch(
             plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
@@ -390,6 +402,9 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
         ax.set_aspect("equal")
         ax.axis("off")
 
+    for ax in axes[3:]:
+        ax.axis("on")
+        ax.set_aspect("auto")
     # Panel 1: Distributions
     axes[0].scatter(d["x0"][:, 0], d["x0"][:, 1], c="gray", alpha=0.5, label="Source", s=10)
     axes[0].scatter(d["x1"][:, 0], d["x1"][:, 1], c="blue", alpha=0.5, label="True Target", s=15)
@@ -398,6 +413,13 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
     )
     axes[0].set_title("Distribution Matching")
     axes[0].legend(loc="upper right")
+    axes[0].add_patch(
+            plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
+        )
+    axes[0].set_xlim([-R * 1.2, R * 1.2])
+    axes[0].set_ylim([-R * 1.2, R * 1.2])
+    axes[0].set_aspect("equal")
+    axes[0].axis("off")
 
     # Panel 2: Trajectories
     axes[1].scatter(d["x0"][:, 0], d["x0"][:, 1], c="gray", s=10, zorder=3)
@@ -407,6 +429,13 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
             d["x_t"][:, n, 0], d["x_t"][:, n, 1], color="grey", alpha=0.5, linewidth=1, zorder=1
         )
     axes[1].set_title("Geodesic Trajectories")
+    axes[1].add_patch(
+            plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
+        )
+    axes[1].set_xlim([-R * 1.2, R * 1.2])
+    axes[1].set_ylim([-R * 1.2, R * 1.2])
+    axes[1].set_aspect("equal")
+    axes[1].axis("off")
 
     # Panel 3: Vector Field
     mid_idx = len(d["eval_t"]) // 2
@@ -435,10 +464,86 @@ def plot_sphere_2d(data_dict, meta, save_path=None):
     )
     axes[2].set_title(f"Field Alignment (t={d['eval_t'][mid_idx]:.2f})")
     axes[2].legend(loc="upper right")
+    axes[2].add_patch(
+            plt.Circle((0, 0), R, color="lightblue", fill=False, linewidth=2, linestyle="--")
+        )
+    axes[2].set_xlim([-R * 1.2, R * 1.2])
+    axes[2].set_ylim([-R * 1.2, R * 1.2])
+    axes[2].set_aspect("equal")
+    axes[2].axis("off")
+    # Panel 4 & 5: 1D KDE in angle space, wrapped onto circle as filled band
+    def angle_kde(points, resolution=500):
+        angles = np.arctan2(points[:, 1], points[:, 0])
+        kde = gaussian_kde(angles)
+        grid = np.linspace(-np.pi, np.pi, resolution)
+        return grid, kde(grid)
+
+    def draw_kde_band(ax, grid, z, color, vmax, scale=0.4, alpha_fill=0.3, lw=1.5):
+        z_based = z - np.min(z)
+        z_norm  = (z_based / vmax) * scale * R  # shared vmax, not per-distribution
+        r_outer = R + z_norm
+        x_inner = R       * np.cos(grid)
+        y_inner = R       * np.sin(grid)
+        x_outer = r_outer * np.cos(grid)
+        y_outer = r_outer * np.sin(grid)
+        x_poly  = np.concatenate([x_outer, x_inner[::-1]])
+        y_poly  = np.concatenate([y_outer, y_inner[::-1]])
+        ax.fill(x_poly, y_poly, color=color, alpha=alpha_fill)
+        ax.plot(x_outer, y_outer, color=color, linewidth=lw)
+
+    def finalize_circle(ax):
+        ax.add_patch(plt.Circle((0, 0), R, color="white", zorder=3))
+        ax.add_patch(plt.Circle((0, 0), R, color="black", fill=False, linewidth=1.5, zorder=4))
+        ax.set_xlim([-R * 1.6, R * 1.6])
+        ax.set_ylim([-R * 1.6, R * 1.6])
+        ax.set_aspect("equal")
+        ax.axis("off")
+
+    grid, z_true_1d = angle_kde(d["x1"])
+    grid, z_hat_1d  = angle_kde(d["x1_hat"])
+
+    z_true_based = z_true_1d - np.min(z_true_1d)
+    z_hat_based  = z_hat_1d  - np.min(z_hat_1d)
+    vmax = max(np.nanmax(z_true_based), np.nanmax(z_hat_based))
+
+    draw_kde_band(axes[3], grid, z_true_1d, color="blue", vmax=vmax)
+    draw_kde_band(axes[3], grid, z_hat_1d,  color="red", vmax=vmax)
+    finalize_circle(axes[3])
+    axes[3].set_title("Density Estimation (KDE): True vs Generated")
+    axes[3].legend(handles=[
+        plt.Line2D([0], [0], color="blue", label="True"),
+        plt.Line2D([0], [0], color="red",  label="Generated"),
+    ], loc="upper right")
+
+    vmax = max(np.nanmax(np.abs(z_true_1d)), np.nanmax(np.abs(z_hat_1d)))
+    if not np.isfinite(vmax) or vmax == 0:
+        axes[4].set_title("KDE Difference (unavailable)")
+    else:
+        z_diff = (z_true_1d - z_hat_1d) / vmax
+        scale  = 0.4 * R
+        x_ref  = R * np.cos(grid)
+        y_ref  = R * np.sin(grid)
+
+        for sign, color in [(1, "blue"), (-1, "red")]:
+            z_signed = np.where(z_diff * sign > 0, z_diff * sign, 0.0)
+            r_band   = R + z_signed * scale / np.nanmax(np.abs(z_diff))
+            x_poly   = np.concatenate([r_band * np.cos(grid), x_ref[::-1]])
+            y_poly   = np.concatenate([r_band * np.sin(grid), y_ref[::-1]])
+            axes[4].fill(x_poly, y_poly, color=color, alpha=0.4)
+
+        r_diff_curve = R + z_diff * scale / np.nanmax(np.abs(z_diff))
+        axes[4].plot(r_diff_curve * np.cos(grid), r_diff_curve * np.sin(grid), color="gray", linewidth=0.8)
+        finalize_circle(axes[4])
+        axes[4].set_title("KDE Difference (True − Generated)")
+        axes[4].legend(handles=[
+            plt.Line2D([0], [0], color="blue", label="Under-generated"),
+            plt.Line2D([0], [0], color="red",  label="Over-generated"),
+        ], loc="upper right")
 
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
+        # plt.tight_layout()
     else:
         plt.show()
 
@@ -455,9 +560,11 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
     )
 
     axes = [
-        fig.add_subplot(131, projection="3d"),
-        fig.add_subplot(132, projection="3d"),
-        fig.add_subplot(133, projection="3d"),
+        fig.add_subplot(151, projection="3d"),
+        fig.add_subplot(152, projection="3d"),
+        fig.add_subplot(153, projection="3d"),
+        fig.add_subplot(154, projection="3d"),
+        fig.add_subplot(155, projection="3d"),
     ]
 
     # Draw the wireframe sphere on all panels
@@ -475,6 +582,8 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
         ax.set_zlim([-R, R])
         ax.set_box_aspect([1, 1, 1])
         ax.axis("off")
+
+        ax.view_init(elev=45, azim=180)
 
     # Panel 1: Distributions
     axes[0].scatter(
@@ -540,6 +649,132 @@ def plot_sphere_3d(data_dict, meta, save_path=None):
     axes[2].set_title(f"Field Alignment (t={d['eval_t'][mid_idx]:.2f})")
     axes[2].legend()
 
+    def to_spherical(points):
+        x = points[:, 0]
+        y = points[:, 1]
+        z = points[:, 2]
+
+
+        theta = np.arctan2(y, x)  # [-pi, pi]
+        phi = np.arccos(np.clip(z / R, -1.0, 1.0))  # [0, pi]
+
+
+        return np.stack([theta, phi], axis=1)
+
+
+    def sphere_kde_cartesian(points, resolution=80, kappa=25.0):
+        """
+        Spherical KDE using a von Mises–Fisher-style kernel.
+
+        points: (N,3) points on sphere
+        kappa: concentration parameter
+            larger = sharper density
+        """
+
+        # Normalize points onto sphere
+        points = points / np.linalg.norm(points, axis=1, keepdims=True)
+
+        phi = np.linspace(0, np.pi, resolution)
+        theta = np.linspace(0, 2 * np.pi, resolution)
+
+        theta, phi = np.meshgrid(theta, phi)
+
+        xs = R * np.cos(theta) * np.sin(phi)
+        ys = R * np.sin(theta) * np.sin(phi)
+        zs = R * np.cos(phi)
+
+        # Grid points on sphere
+        grid_points = np.stack(
+            [
+                xs.ravel(),
+                ys.ravel(),
+                zs.ravel(),
+            ],
+            axis=1,
+        )
+
+        # Normalize grid points
+        grid_points = grid_points / np.linalg.norm(
+            grid_points,
+            axis=1,
+            keepdims=True,
+        )
+
+        # Cosine similarity = spherical inner product
+        dots = grid_points @ points.T
+
+        # von Mises–Fisher-like kernel
+        density = np.exp(kappa * dots).sum(axis=1)
+
+        # Normalize
+        density /= density.max() + 1e-8
+
+        density = density.reshape(xs.shape)
+
+        return xs, ys, zs, density
+
+
+    xs, ys, zs, z_true = sphere_kde_cartesian(d["x1"])
+    _, _, _, z_hat = sphere_kde_cartesian(d["x1_hat"])
+
+    z_true = np.nan_to_num(z_true)
+    z_hat = np.nan_to_num(z_hat)
+
+    vmax = max(
+        np.nanmax(z_true),
+        np.nanmax(z_hat),
+        1e-8,
+    )
+
+    # Panel 4: KDE true/generated overlay
+    axes[3].plot_surface(
+        xs,
+        ys,
+        zs,
+        facecolors=plt.cm.Blues(z_true / vmax),
+        rstride=1,
+        cstride=1,
+        linewidth=0,
+        antialiased=False,
+        alpha=0.7,
+    )
+
+    axes[3].plot_surface(
+        xs,
+        ys,
+        zs,
+        facecolors=plt.cm.Reds(z_hat / vmax),
+        rstride=1,
+        cstride=1,
+        linewidth=0,
+        antialiased=False,
+        alpha=0.4,
+    )
+
+    axes[3].set_title("Density Estimation (KDE)")
+    axes[3].set_box_aspect([1, 1, 1])
+    axes[3].axis("off")
+
+    # Panel 5: KDE difference
+    z_diff = (z_true - z_hat) / vmax
+
+    surf = axes[4].plot_surface(
+        xs,
+        ys,
+        zs,
+        facecolors=plt.cm.RdBu((z_diff + 1) / 2),
+        rstride=1,
+        cstride=1,
+        linewidth=0,
+        antialiased=False,
+    )
+
+    axes[4].set_title("KDE Difference (True − Generated)")
+    axes[4].set_box_aspect([1, 1, 1])
+    axes[4].axis("off")
+
+
+    
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, bbox_inches="tight")
