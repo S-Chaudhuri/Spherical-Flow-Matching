@@ -1,223 +1,136 @@
-# TODO: update to our project
+# How Curvature, Dimensionality and Distributional Complexity Affect Riemannian Flow Matching
 
-![Model architecture](HFM.drawio.png)
+This repository accompanies the paper *How Curvature, Dimensionality and Distributional Complexity Affect Riemannian Flow Matching*. The paper studies why Riemannian Flow Matching (RFM) behaves differently across geometries by running controlled synthetic experiments on spherical, Euclidean, and hyperbolic manifolds. By varying curvature, dimensionality, and target distribution structure independently, it isolates whether observed differences come from curvature-induced volume growth, its amplification in high dimensions, or its interaction with the structure of the target distribution. The experiments use four families of synthetic targets of increasing complexity: Gaussian-to-Gaussian, Symmetric Gaussian Ring, Mixture of Gaussians, and Checkerboard.
 
-Learning image representations that respect the intrinsic geometry of data is crucial for capturing hierarchical semantic structure, yet generative transport is typically performed in Euclidean spaces where this structure is not preserved. In this work, we propose a geometry-aware generative framework that combines hyperbolic representation learning with Riemannian Flow Matching to perform generative transport directly in hyperbolic latent space. Instead of learning generative dynamics in pixel space or Euclidean latents, we transport samples directly on the manifold produced by a pretrained hyperbolic autoencoder, preserving geometric organization and yielding more stable samples than Euclidean latent transport. We further investigate curvature as a controllable geometric inductive bias and observe a trade-off between generation realism and diversity, where moderate curvature yields more coherent samples, and larger curvature allows visual variation at the cost of stability, highlighting how latent geometry shapes generative transport. 
+This codebase runs those RFM experiments across curvatures (Euclidean / spherical / hyperbolic) using Hydra. The simplest entrypoint is the `general_fm` experiment in `riemannian-fm/configs/experiment/general_fm.yaml`.
 
+## Results
 
-## 1) Environments
+The results reported in the paper can be viewed and reproduced in the `riemannian-fm/results/results.ipynb` notebook.
 
-### hyper_env (HAE)
-Create the conda environment from the root-level YAML:
+## Installation
 
-```bash
-conda env create -f hyper_env.yaml
-conda activate hyper_env
-```
-
-### manifm (RFM)
-Create the conda environment for RFM:
+Create the conda environment:
 
 ```bash
 conda env create -f riemannian-fm/environment.yml
 conda activate manifm
 ```
 
-This repository is compatible with NVIDIA GPUs up to A100/H100 architectures.
-
-## 2) Dataset
-
-Datasets are listed here:
-
-```text
-https://github.com/bcmi/Awesome-Few-Shot-Image-Generation
-```
-
-Download the datasets you need (flowers, animal faces, etc.), place them on disk, and then update the dataset locations in:
-
-- `HAE/configs/paths_config.py`
-
-That file controls where HAE looks for `flowers_train`, `flowers_test`, `animal_faces`, etc. Make sure the paths match your local dataset locations.
-
-Pretrained HAE/PSP weights are provided here:
-
-```text
-https://drive.google.com/drive/folders/18zMfAEjd4JLsjQM78ky2GmHsolV7OJ_x?usp=share_link
-```
-
-Place those weights under:
-
-- `HAE/pretrained_models/`
-
-The HAE weights are given only for curvature=1.
-
-## 3) Train HAE
-
-The SLURM job script is:
-
-- `HAE/run_train.sh`
-
-It activates `hyper_env` and runs `python scripts/train.py` with the full set of flags. Key flags to adjust:
-
-- `--dataset_type` (e.g. `animalfaces_encode_eva`, `flowers_encode_eva`)
-- `--psp_checkpoint_path` (points into `HAE/pretrained_models/`)
-- `--exp_dir` (output directory for checkpoints/logs)
-- `--hyperbolic_curvature` (insert a negative value)
-- `--hyperbolic_lambda` and `--reverse_lambda` (loss weights)
-
-Example (from `HAE/run_train.sh`):
+Install PyTorch (choose the command matching your CUDA / CPU setup). Example for CUDA 11.8:
 
 ```bash
-python scripts/train.py \
-  --dataset_type=animalfaces_encode_eva \
-  --psp_checkpoint_path=pretrained_models/psp_animalfaces.pt \
-  --exp_dir=/scratch-shared/fvaleau/output_animals_c5.0 \
-  --feature_size=512 \
-  --workers=8 \
-  --batch_size=8 \
-  --test_batch_size=8 \
-  --test_workers=8 \
-  --val_interval=80000 \
-  --save_interval=10000 \
-  --encoder_type=GradualStyleEncoder \
-  --start_from_latent_avg \
-  --lpips_lambda=1 \
-  --l2_lambda=1 \
-  --image_interval=1000 \
-  --hyperbolic_lambda=0.3 \
-  --reverse_lambda=1 \
-  --hyperbolic_curvature=-5 \
-  --use_wandb
+pip install torch --index-url https://download.pytorch.org/whl/cu118
 ```
 
-## 4) Inference (Extract Hyperbolic + Euclidean Embeddings)
+## Repository layout
 
-The inference job script is:
+| Path | What it contains |
+| --- | --- |
+| `riemannian-fm/train.py` | Main Hydra entrypoint for training (run with `python train.py experiment=...`). |
+| `riemannian-fm/configs/train.yaml` | Base Hydra config (logging, output dirs, default optimizer/model settings). |
+| `riemannian-fm/configs/experiment/general_fm.yaml` | Core synthetic experiment used in this repo (`data: general_fm`). |
+| `riemannian-fm/configs/generate_mog_config.py` | CLI tool to generate MoG experiment YAMLs into `riemannian-fm/configs/experiment/`. |
+| `riemannian-fm/manifm/` | Library code: datasets, manifolds, model components, Lightning module, metrics. |
+| `riemannian-fm/results/results.ipynb` | Notebook used to view/reproduce paper results. |
+| `riemannian-fm/results/runs/` | Example run artifacts used by the results/visualization utilities. |
+| `riemannian-fm/outputs/` | Default Hydra output root for runs and multiruns. |
 
-- `HAE/inference.sh`
+## Train (general_fm)
 
-It runs `scripts/inference_umap.py`. That script **saves embeddings** to the `--exp_dir` you specify:
-
-- Hyperbolic embeddings: `<exp_dir>/embed`
-- Euclidean embeddings: `<exp_dir>/euc_embed`
-- Labels: `<exp_dir>/label`
-- Image paths: `<exp_dir>/image_path`
-
-Example (from `HAE/inference.sh`):
+Run training from the RFM subproject:
 
 ```bash
-python scripts/inference_umap.py \
-  --exp_dir proj/animals_emb_5 \
-  --checkpoint_path /scratch-shared/fvaleau/output_animals_c5.0/checkpoints/best_model.pt \
-  --data_path /home/fvaleau/HAE/proj/animal_faces \
-  --test_batch_size 1
+cd riemannian-fm
+python train.py experiment=general_fm
 ```
 
-## 5) Train RFM on the Embeddings
-
-The SLURM job script is:
-
-- `riemannian-fm/train.sh`
-
-RFM reads paths from the Hydra config:
-
-- `riemannian-fm/configs/train.yaml`
-
-Set these fields to point at your HAE outputs:
-
-- `images_datadir` -> `<HAE exp_dir>/embed`
-- `images_labels` -> `<HAE exp_dir>/label`
-
-Then run (in `riemannian-fm/train.sh`) the hyperbolic flow matching training:
+Common overrides:
 
 ```bash
-python train.py experiment=images seed=0
+# Disable Weights & Biases
+python train.py experiment=general_fm use_wandb=False
+
+# Switch manifold / curvature / dimension
+python train.py experiment=general_fm general.manifold=euclidean general.curvature=1.0 general.dim=3
+python train.py experiment=general_fm general.manifold=poincare  general.curvature=1.0 general.dim=3
+python train.py experiment=general_fm general.manifold=sphere    general.curvature=1.0 general.dim=3
+
+# Use different target distribution
+python train.py experiment=general_fm general.x1_dist=gaussian-ring
+python train.py experiment=general_fm general.x1_dist=checkerboard
+
+# Enable tangent normalization of sampled distributions
+python train.py experiment=general_fm general.normalize_tangent_distributions=True
 ```
 
-Model/optimization settings live in:
+*N.B.: Curvature for sphere is defined in ambient space*
 
-- `riemannian-fm/configs/experiment/images.yaml`
+Outputs:
+- Hydra runs inside an auto-created output folder (see `hydra.run.dir` in `riemannian-fm/configs/train.yaml`).
+- Checkpoints are saved under `checkpoints/` in the run directory.
+- Metrics are written to `metrics.json` in the run directory.
 
-If you need different data paths, **edit `riemannian-fm/configs/train.yaml`**. This is where to model the paths for RFM training.
+## MoG config generator
 
-## 6) Sample Latents from RFM
+Writing Mixture-of-Gaussians (MoG) experiments by hand in YAML can be tedious and error-prone. The generator script creates a complete Hydra experiment YAML for you.
 
-Sampling is done via `sample.py`. In `riemannian-fm/train.sh`, use a line like:
+Key concept:
+- We define Gaussians in the tangent space at the origin, $T_0M$ (a flat Euclidean space).
+- A specified `radius` is interpreted as a geodesic distance on the manifold.
+- During training, the exponential map $\mathrm{Exp}_0(v)$ maps tangent vectors to points on the curved manifold.
+
+### Generate a MoG experiment YAML
+
+Run the generator from the repository root (it writes into `riemannian-fm/configs/experiment/`):
 
 ```bash
-python sample.py \
-  --checkpoint /path/to/your/checkpoint.ckpt \
-  --name animals_c0.5 \
-  --n_samples 49980
+python riemannian-fm/configs/generate_mog_config.py \
+	--filename my_mog.yaml \
+	--manifold poincare \
+	--curvature 1.0 \
+	--dim 2 \
+	--radii 1.5 1.5 \
+	--angles 0 180 \
+	--stds 0.1 0.1 \
+	--weights 1.0 1.0
 ```
 
-This writes the samples to:
+Notes:
+- You must provide either:
+	- Polar mode: `--radii ... --angles ...` (one radius+angle per Gaussian), or
+	- Cartesian mode: `--cartesian_means '[[x1,y1,...],[x2,y2,...]]'`
+- `--stds` can be isotropic (`0.1`) or anisotropic (`"0.5,0.1,0.1"`).
+- Weights are normalized to sum to 1.0.
 
-- `/scratch-shared/fvaleau/FID/fm_samples_<name>`
-
-That path is hard-coded in `riemannian-fm/sample.py`, to change it, please modify the script.
-
-## 7) Decode Samples + Compute FID
-
-HAE decoding + FID is driven by:
-
-- `HAE/visualize.sh`
-
-To decode, use a line like:
+Optional per-component overrides (targets Gaussians by index: `G0`, `G1`, ...):
 
 ```bash
-python Visualization/decode_hyperemb.py \
-  --dataset animals \
-  --emb_name fm_samples_animals_c0.5 \
-  --model_path /home/fvaleau/HAE/pretrained_models/hae_animalfaces.pt
+python riemannian-fm/configs/generate_mog_config.py \
+	--filename my_mog_override.yaml \
+	--manifold poincare \
+	--dim 2 \
+	--radii 1.5 1.5 \
+	--angles 0 180 \
+	--stds 0.1 0.1 \
+	--weights 1.0 1.0 \
+	--overrides '{"G0":{"weight":10.0,"std":[0.5,0.1]}}'
 ```
 
-`decode_hyperemb.py` expects the samples at:
+### Train using the generated config
 
-- `/scratch-shared/fvaleau/FID/<emb_name>`
-
-It will save generated images to:
-
-- `/scratch-shared/fvaleau/FID/<dataset>_generated/<emb_name>`
-
-…and compute FID against:
-
-- `/scratch-shared/fvaleau/FID/<dataset>_train`
-
-Please modify these paths in `decode_hyperemb.py` if needed.
-
-If your samples are Euclidean, switch the decode branch in:
-
-- `HAE/Visualization/decode_hyperemb.py`
-
-There are commented sections that indicate how to decode Poincaré samples vs. Euclidean W+ samples.
-
-## Euclidean Experiment (Baseline)
-
-1) **Extract Euclidean embeddings** with `HAE/inference.sh` (already produces `<exp_dir>/euc_embed`).
-
-2) **Point RFM to euclidean embeddings** by editing:
-
-- `riemannian-fm/configs/train.yaml`
-  - `euclidean_datadir` -> `<HAE exp_dir>/euc_embed`
-
-3) **Train Euclidean flow matching** by uncommenting in `riemannian-fm/train.sh`:
+Once `my_mog.yaml` exists under `riemannian-fm/configs/experiment/`, train it with:
 
 ```bash
-python train.py experiment=euclidean seed=0
+cd riemannian-fm
+python train.py experiment=my_mog
 ```
 
-4) **Sample Euclidean latents** via `sample.py` (same as above, but using the euclidean checkpoint).
+(Use the filename without the `.yaml`.)
 
-5) **Decode + FID** using `HAE/visualize.sh` with a matching `--emb_name` and the HAE model path. The default decode branch in `decode_hyperemb.py` already handles Euclidean W+ samples.
+## Acknowledgements
 
-## Citations
+This project builds upon the following repositories:
 
-This codebase builds upon the following repositories:
-
-``` 
-https://github.com/lingxiao-li/HAE.git
-https://github.com/facebookresearch/riemannian-fm
-```
-The original HE environment is not compatible with the current framework nor with newer NVIDIA GPU architectures (A100/H100).
-
+- [facebookresearch/riemannian-fm](https://github.com/facebookresearch/riemannian-fm) — the original Riemannian Flow Matching implementation.
+- [federicavaleau/Hyperbolic-Flow-Matching](https://github.com/federicavaleau/Hyperbolic-Flow-Matching) — hyperbolic flow matching extensions.

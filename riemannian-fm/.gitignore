@@ -2,6 +2,10 @@ data
 geomstats
 outputs
 libigl-tutorial-data
+pretty_plots
+selected_plots
+wandb
+results1
 
 __pycache__
 *.pyc
@@ -23,7 +27,6 @@ lightning_logs
 *.egg-info
 build
 *.egg
-*.csv
 
 # Jupyter Notebook
 .ipynb_checkpoints

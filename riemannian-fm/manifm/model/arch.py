@@ -6,8 +6,6 @@ import torch.nn as nn
 
 import manifm.model.diffeq_layers as diffeq_layers
 from manifm.model.actfn import Sine, Softplus
-from manifm.manifolds.mesh import Mesh, closest_point, face_normal
-from manifm.manifolds import SPD
 
 
 ACTFNS = {
@@ -82,23 +80,9 @@ class ProjectToTangent(nn.Module):
         self.metric_normalize = metric_normalize
 
     def forward(self, t, x):
-        if isinstance(self.manifold, Mesh):
-            # Memory-efficient implementation for meshes.
-            with torch.no_grad():
-                _, f_idx = closest_point(x, self.manifold.v, self.manifold.f)
-                vs = self.manifold.v[self.manifold.f[f_idx]]
-                n = face_normal(a=vs[:, 0], b=vs[:, 1], c=vs[:, 2])
-            x = x + (n * (vs[:, 0] - x)).sum(-1, keepdim=True) * n
-            v = self.vecfield(t, x)
-            v = v - (n * v).sum(-1, keepdim=True) * n
-        if isinstance(self.manifold, SPD):
-            # projx is expensive and we can just skip it since it doesn't affect divergence.
-            v = self.vecfield(t, x)
-            v = self.manifold.proju(x, v)
-        else:
-            x = self.manifold.projx(x)
-            v = self.vecfield(t, x)
-            v = self.manifold.proju(x, v)
+        x = self.manifold.projx(x)
+        v = self.vecfield(t, x)
+        v = self.manifold.proju(x, v)
 
         if self.metric_normalize and hasattr(self.manifold, "metric_normalized"):
             v = self.manifold.metric_normalized(x, v)

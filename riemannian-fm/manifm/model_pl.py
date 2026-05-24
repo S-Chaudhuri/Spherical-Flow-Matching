@@ -1,17 +1,12 @@
 """Copyright (c) Meta Platforms, Inc. and affiliates."""
 
-from typing import Any, List
+from typing import Any
 import os
 import traceback
 import numpy as np
 import matplotlib.pyplot as plt
-import geopandas
-from shapely.geometry import Point
-
-from tqdm import tqdm
 import geoopt
 import torch
-import torch.nn.functional as F
 import math
 from torchmetrics import MeanMetric, MinMetric
 import pytorch_lightning as pl
@@ -25,20 +20,12 @@ except Exception:
 from manifm.datasets import get_manifold
 from manifm.ema import EMA
 from manifm.model.arch import tMLP, ProjectToTangent, Unbatch
-from manifm.utils import lonlat_from_cartesian, cartesian_from_latlon
 from manifm.manifolds import (
-    Sphere,
-    FlatTorus,
     Euclidean,
     ProductManifold,
-    Mesh,
-    SPD,
     PoincareBall,
     SphereCurvature
 )
-from manifm.manifolds.spd import plot_cone
-from manifm.manifolds import geodesic
-from manifm.mesh_utils import trimesh_to_vtk, points_to_vtk
 from manifm.solvers import projx_integrator_return_last, projx_integrator
 from manifm.metrics import ManifoldMetricHandler
 
@@ -179,11 +166,6 @@ class ManifoldFMLitModule(pl.LightningModule):
         eval_x1 = eval_x1.to(self.device)
         eval_t = eval_t.to(self.device)
 
-        # this fixed-eval saving path is currently implemented for simple manifolds.
-        # mesh uses solve_path settings and would need a separate implementation.
-        if isinstance(self.manifold, Mesh):
-            return
-
         # we will collect one tensor per saved time value, then stack over time.
         xt_list = []
         ut_list = []
@@ -195,49 +177,27 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         for t_scalar in eval_t_flat.tolist():
             t_scalar = float(t_scalar)
+                
+            # for sphere / poincare / euclidean, we use the geodesic path
+            # x_t = expmap(x0, t * logmap(x0, x1))
+            # u_t = d/dt x_t
+            t_batch = torch.full(
+                (eval_x0.shape[0], 1),
+                t_scalar,
+                device=self.device,
+                dtype=eval_x0.dtype,
+            )
 
-            # build a batch-sized time tensor for this single probe time.
-            if isinstance(self.manifold, SPD):
-                # SPD geodesic API expects shape [N]
-                t_batch = torch.full(
-                    (eval_x0.shape[0],),
-                    t_scalar,
-                    device=self.device,
-                    dtype=eval_x0.dtype,
-                )
+            shooting_tangent_vec = self.manifold.logmap(eval_x0, eval_x1)
 
-                # x_t = geodesic(x0, x1; t)
-                # u_t = d/dt geodesic(x0, x1; t)
-                def spd_geodesic(t_in):
-                    return self.manifold.geodesic(eval_x0, eval_x1, t_in)
+            def path(t_in):
+                return self.manifold.expmap(eval_x0, t_in * shooting_tangent_vec)
 
-                x_t, u_t = jvp(
-                    spd_geodesic,
-                    (t_batch,),
-                    (torch.ones_like(t_batch),),
-                )
-
-            else:
-                # for sphere / poincare / euclidean, we use the geodesic path
-                # x_t = expmap(x0, t * logmap(x0, x1))
-                # u_t = d/dt x_t
-                t_batch = torch.full(
-                    (eval_x0.shape[0], 1),
-                    t_scalar,
-                    device=self.device,
-                    dtype=eval_x0.dtype,
-                )
-
-                shooting_tangent_vec = self.manifold.logmap(eval_x0, eval_x1)
-
-                def path(t_in):
-                    return self.manifold.expmap(eval_x0, t_in * shooting_tangent_vec)
-
-                x_t, u_t = jvp(
-                    path,
-                    (t_batch,),
-                    (torch.ones_like(t_batch),),
-                )
+            x_t, u_t = jvp(
+                path,
+                (t_batch,),
+                (torch.ones_like(t_batch),),
+            )
 
             # ensure shape [N, D]
             x_t = x_t.reshape(eval_x0.shape[0], self.dim)
@@ -848,10 +808,6 @@ class ManifoldFMLitModule(pl.LightningModule):
 
                 # Mask out those that left the manifold
                 masked_logp1 = logp1
-                if isinstance(self.manifold, SPD):
-                    mask = integ_error < 1e-5
-                    self.log("frac_within_manifold", mask.sum() / mask.nelement())
-                    masked_logp1 = logp1[mask]
 
                 if return_projx_error:
                     return logp1, integ_error
@@ -876,74 +832,16 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         N = x1.shape[0]
 
-        if isinstance(self.manifold, Mesh):
-            t1 = 1.0 - self.cfg.mesh.time_eps
-            T = self.cfg.mesh.nsteps
-            # stratified sample of time values
-            t = torch.linspace(0, t1, T + 1)
-            t = t + torch.rand_like(t) * t1 / T
-            t[-1] = t1
-            t = F.pad(t, (1, 0), value=0.0)
-            t = t.to(x1)
-            T = t.shape[0]
+        t = torch.rand(N).reshape(-1, 1).to(x1)
 
-            with torch.no_grad():
-                x_t, u_t = self.manifold.solve_path(
-                    x0,
-                    x1,
-                    t,
-                    projx=self.cfg.mesh.projx,
-                    method=self.cfg.mesh.method,
-                    atol=self.cfg.mesh.atol,
-                    rtol=self.cfg.mesh.rtol,
-                )
+        # batched geodesic evaluation + derivative w.r.t. time.
+        shooting_tangent_vec = self.manifold.logmap(x0, x1)
 
-            x_t = x_t.reshape(T * N, 3)
-            u_t = u_t.reshape(T * N, 3)
-            t = t.reshape(T, 1).expand(T, N).reshape(-1)
+        x_t = self.manifold.expmap(x0, t * shooting_tangent_vec)
+        u_t = self.manifold.transp(x0, x_t, shooting_tangent_vec)
 
-        elif isinstance(self.manifold, SPD):
-            t = torch.rand(N).to(x1)
-
-            def SPD_geodesic(t):
-                return self.manifold.geodesic(x0, x1, t)
-
-            x_t, u_t = jvp(SPD_geodesic, (t,), (torch.ones_like(t).to(t),))
-            x_t = x_t.reshape(N, self.dim)
-            u_t = u_t.reshape(N, self.dim)
-
-        else:
-            t = torch.rand(N).reshape(-1, 1).to(x1)
-
-            # batched geodesic evaluation + derivative w.r.t. time.
-            shooting_tangent_vec = self.manifold.logmap(x0, x1)
-
-            # def path(t):
-            #     return self.manifold.expmap(x0, t * shooting_tangent_vec)
-
-            # x_t, u_t = jvp(path, (t,), (torch.ones_like(t).to(t),))
-            x_t = self.manifold.expmap(x0, t * shooting_tangent_vec)
-            u_t = self.manifold.transp(x0, x_t, shooting_tangent_vec)
-
-            x_t = x_t.reshape(N, self.dim)
-            u_t = u_t.reshape(N, self.dim)
-
-            # t = torch.rand(N, 1, device=x1.device, dtype=x1.dtype)
-
-            # x_t_list = []
-            # u_t_list = []
-
-            # for i in range(N):
-            #     path = geodesic(self.manifold, x0[i], x1[i])
-
-            #     ti = t[i]  # shape [1]
-            #     xi, ui = jvp(path, (ti,), (torch.ones_like(ti),))
-
-            #     x_t_list.append(xi)
-            #     u_t_list.append(ui)
-
-            # x_t = torch.cat(x_t_list, dim=0)  # [N, dim]
-            # u_t = torch.cat(u_t_list, dim=0)
+        x_t = x_t.reshape(N, self.dim)
+        u_t = u_t.reshape(N, self.dim)
 
         diff = self.vecfield(t, x_t) - u_t
         return self.manifold.inner(x_t, diff, diff).mean() / self.dim
@@ -1032,22 +930,7 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         if batch_idx == 0:
             self.visualize(batch)
-            
-            # # log model samples 
-            # run = self._wandb_run()
-            # if run is not None:
-            #     n = 256
-            #     if isinstance(batch, dict) and "x0" in batch:
-            #         x0 = batch["x0"][:n]
-            #         x1_hat = self.sample(x0.shape[0], device=x0.device, x0=x0)
-            #         self._wandb_log_pt("val_x1_hat", {"x0": x0.detach().cpu(), "x1_hat": x1_hat.detach().cpu()})
-            #     else:
-            #         x1_hat = self.sample(n, device=self.device)
-            #         self._wandb_log_pt("val_x1_hat", {"x1_hat": x1_hat.detach().cpu()})
-
-            # # log integration grid used for trajectories
-            # t_grid = torch.linspace(0, 1, 1001)
-            # #self._wandb_log_pt("eval_t_grid", {"t_grid": t_grid})   
+           
         return {"loss": loss}
 
     # def validation_epoch_end(self, outputs):
@@ -1055,36 +938,6 @@ class ManifoldFMLitModule(pl.LightningModule):
         val_loss = self.val_metric.compute()
         self.val_metric_best.update(val_loss)
         self.log("val/loss_best", self.val_metric_best.compute(), on_epoch=True, prog_bar=True)
-
-        # # early stopping on train loss
-        # if (
-        #     self._early_stopping_patience > 0
-        #     and getattr(self, "trainer", None) is not None
-        #     and not getattr(self.trainer, "sanity_checking", False)
-        # ):
-        #     if torch.is_tensor(val_loss):
-        #         val_loss_scalar = float(val_loss.detach().cpu().item())
-        #         val_loss_finite = bool(torch.isfinite(val_loss).item())
-        #     else:
-        #         val_loss_scalar = float(val_loss)
-        #         val_loss_finite = math.isfinite(val_loss_scalar)
-
-        #     if val_loss_finite:
-        #         step = int(self.global_step)
-        #         # update newest low loss and step at which it was achieved
-        #         if val_loss_scalar < self._early_stopping_best:
-        #             self._early_stopping_best = val_loss_scalar
-        #             self._early_stopping_best_step = step
-        #             if getattr(self.trainer, "is_global_zero", True):
-        #                 os.makedirs(os.path.dirname(self._early_stopping_ckpt_path), exist_ok=True)
-        #                 self.trainer.save_checkpoint(self._early_stopping_ckpt_path)
-        #         # check if the amount of steps since last lowest exceeds threshold
-        #         elif (step - int(self._early_stopping_best_step)) >= self._early_stopping_patience:
-        #             self.trainer.should_stop = True
-        #             fit_loop = getattr(self.trainer, "fit_loop", None)
-        #             if fit_loop is not None:
-        #                 fit_loop.should_stop = True
-
         self.val_metric.reset()
         
     def on_test_epoch_start(self):
@@ -1109,7 +962,7 @@ class ManifoldFMLitModule(pl.LightningModule):
 
         if self.metric_handler is not None:
             # vector metrics
-            if x0 is not None and not isinstance(self.manifold, Mesh):
+            if x0 is not None:
                 N = x1.shape[0]
 
                 t = torch.rand(N, 1, device=x1.device, dtype=x1.dtype)

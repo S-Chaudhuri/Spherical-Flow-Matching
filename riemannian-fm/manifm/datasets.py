@@ -4,16 +4,10 @@ import os
 from csv import reader
 import random
 import numpy as np
-import pandas as pd
-import igl
 import torch
-import geoopt
 from torch.utils.data import Dataset, DataLoader
 
-from manifm.manifolds import Sphere, FlatTorus, Mesh, SPD, PoincareBall, Euclidean, SphereCurvature
-from manifm.manifolds.mesh import Metric
-from manifm.utils import cartesian_from_latlon
-from manifm.manifolds.poincare import PoincareBallManifold
+from manifm.manifolds import PoincareBall, Euclidean, SphereCurvature
 
 
 def load_csv(filename):
@@ -21,189 +15,6 @@ def load_csv(filename):
     lines = reader(file)
     dataset = np.array(list(lines)[1:]).astype(np.float64)
     return dataset
-
-
-class MeshDataset(Dataset):
-    dim = 3
-
-    def __init__(self, root: str, data_file: str, obj_file: str, scale=1 / 250):
-        with open(os.path.join(root, data_file), "rb") as f:
-            data = np.load(f)
-
-        v, f = igl.read_triangle_mesh(os.path.join(root, obj_file))
-
-        self.v = torch.tensor(v).float() * scale
-        self.f = torch.tensor(f).long()
-        self.data = torch.tensor(data).float() * scale
-
-    def manifold(self, *args, **kwargs):
-        return Mesh(self.v, self.f, *args, **kwargs)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
-
-
-class HyperbolicDatasetPair(Dataset):
-    manifold = PoincareBall()
-    dim = 2
-    # dim = 8
-
-    def __init__(self, distance=0.6, std=0.7):
-        self.distance = distance
-        self.std = std
-
-    def __len__(self):
-        return 20000
-
-    def __getitem__(self, idx):
-        # sign0 = (torch.rand(1) > 0.5).float() * 2 - 1
-        # sign1 = (torch.rand(1) > 0.5).float() * 2 - 1
-
-        # mean0 = torch.tensor([self.distance, self.distance]) #* sign0
-        mean0 = torch.tensor([0.0, 0.0])
-        # mean1 = torch.tensor([-self.distance, self.distance]) * sign1
-        mean1 = torch.tensor([-self.distance, -self.distance])
-
-        x0 = PoincareBall().wrapped_normal(2, mean=mean0, std=self.std)
-        x1 = PoincareBall().wrapped_normal(2, mean=mean1, std=self.std)
-
-        return {"x0": x0, "x1": x1}
-
-
-# Old hyperbolic images class, before it was matching from uniform random noise to images
-class HyperbolicImages(Dataset):
-    dim = 512
-
-    """
-    Dataset for real hyperbolic embeddings on a Poincaré ball of curvature -c.
-    """
-
-    def __init__(self, emb_path, label_path=None, pair_mode="self"):
-        """
-        Args:
-            emb_path: path to saved embeddings (torch.save)
-            label_path: optional label file
-            pair_mode:
-                "self" → x0 is tangent noise, x1 is embedding
-                "paired" → sample two different classes
-                "none" → return only x1
-        """
-        self.emb = torch.tensor(torch.load(emb_path)).float()
-
-        # Ensure shapes [N, D]
-        if self.emb.ndim == 1:
-            self.emb = self.emb.unsqueeze(0)
-        elif self.emb.ndim > 2:
-            self.emb = self.emb.reshape(self.emb.shape[0], -1)
-
-        self.labels = None
-        if label_path is not None:
-            self.labels = torch.tensor(torch.load(label_path))
-
-        self.manifold = PoincareBall()
-        self.dim = self.emb.shape[1]
-        self.pair_mode = pair_mode
-
-    def __len__(self):
-        return len(self.emb)
-
-    def __getitem__(self, idx, dim=512):
-
-        x1 = self.emb[idx].reshape(-1)
-
-        if self.pair_mode == "none":
-            return {"x1": x1}
-
-        if self.pair_mode == "self":
-            # Uniform distribution from VRFM
-            # x0 = 2*torch.rand(dim) - 1
-            # x0 = PoincareBallManifold().wrap(x0)
-            x0 = self.manifold.wrapped_normal(self.dim, mean=torch.zeros(self.dim), std=0.3)
-            return {"x0": x0, "x1": x1}
-
-        # Pair two different embeddings (e.g., across classes)
-        if self.pair_mode == "paired":
-            j = torch.randint(0, len(self.emb), (1,)).item()
-            x0 = self.emb[j]
-            return {"x0": x0, "x1": x1}
-
-
-class EuclideanImages(Dataset):
-    dim = 9216  # 512x18
-
-    """
-    Dataset for real Euclidean embeddings.
-    """
-
-    def __init__(self, emb_path, label_path=None):
-        """
-        Args:
-            emb_path: path to saved embeddings (torch.save)
-            label_path: optional label file
-            pair_mode:
-                "self" → x0 is tangent noise, x1 is embedding
-                "paired" → sample two different classes
-                "none" → return only x1
-        """
-        self.emb = torch.tensor(torch.load(emb_path)).float()
-
-        # Ensure shapes [N,512]
-        if self.emb.ndim == 1:
-            self.emb = self.emb.unsqueeze(0)
-
-        self.labels = None
-        if label_path is not None:
-            self.labels = torch.tensor(torch.load(label_path))
-
-        self.manifold = Euclidean()
-        self.dim = self.emb.shape[1]
-
-    def __len__(self):
-        return len(self.emb)
-
-    def __getitem__(self, idx, dim=512):
-
-        x1 = self.emb[idx]
-        x0 = self.manifold.random_normal(self.dim, mean=torch.zeros(self.dim), std=1.0)
-        return {"x0": x0, "x1": x1}
-
-
-class HyperbolicUniformToGaussian(Dataset):
-    """
-    Synthetic dataset for learning a flow from
-    Uniform(Poincaré Ball) → Wrapped Gaussian(Poincaré Ball)
-    """
-
-    def __init__(self, dim=2, mean=None, std=0.3, n_samples=20000):
-        # super().__init__()
-        self.dim = dim
-        self.n_samples = n_samples
-        self.std = std
-        if mean is None:
-            mean = torch.zeros(dim)
-        self.mean = mean.float()
-        self._manifold = PoincareBall()
-
-    @property
-    def manifold(self):
-        return self._manifold
-
-    def __len__(self):
-        return self.n_samples
-
-    def __getitem__(self, idx):
-
-        ### 1. Sample x0 ~ Uniform on ball - using VRFM implementation
-        x0 = self._manifold.random_base(batch_size=1, dim=self.dim).squeeze(0)
-        device = x0.device
-        mean = self.mean.to(device)
-        ### 2. Sample x1 ~ Wrapped Normal
-        x1 = self._manifold.wrapped_normal(self.dim, mean=mean, std=self.std)
-        return {"x0": x0, "x1": x1}
-
 
 class CheckerboardDataset(Dataset):
     """
@@ -298,43 +109,6 @@ class CheckerboardDataset(Dataset):
             raise ValueError(f"unknown manifold: {self.manifold_name}")
 
         return x1
-
-
-class Wrapped(Dataset):
-    def __init__(
-        self,
-        manifold,
-        dim,
-        n_mixtures=1,
-        scale=0.2,
-        centers=None,
-        dataset_size=200000,
-    ):
-        self.manifold = manifold
-        self.dim = dim
-        self.n_mixtures = n_mixtures
-        if centers is None:
-            self.centers = self.manifold.random_uniform(n_mixtures, dim)
-        else:
-            self.centers = centers
-        self.scale = scale
-        self.dataset_size = dataset_size
-
-    def __len__(self):
-        return self.dataset_size
-
-    def __getitem__(self, idx):
-        del idx
-
-        idx = torch.randint(self.n_mixtures, (1,)).to(self.centers.device)
-        mean = self.centers[idx].squeeze(0)
-
-        tangent_vec = torch.randn(self.dim).to(self.centers)
-        tangent_vec = self.manifold.proju(mean, tangent_vec)
-        tangent_vec = self.scale * tangent_vec
-        sample = self.manifold.expmap(mean, tangent_vec)
-        return sample
-
 
 class GeneralDataset(Dataset):
     """
@@ -875,132 +649,11 @@ class GeneralDataset(Dataset):
 
 def _get_dataset(cfg):
     expand_factor = 1
-    if cfg.data == "volcano":
-        dataset = Volcano(cfg.get("earth_datadir", cfg.get("datadir", None)))
-        expand_factor = 1550
-    elif cfg.data == "earthquake":
-        dataset = Earthquake(cfg.get("earth_datadir", cfg.get("datadir", None)))
-        expand_factor = 210
-    elif cfg.data == "fire":
-        dataset = Fire(cfg.get("earth_datadir", cfg.get("datadir", None)))
-        expand_factor = 100
-    elif cfg.data == "flood":
-        dataset = Flood(cfg.get("earth_datadir", cfg.get("datadir", None)))
-        expand_factor = 260
-    elif cfg.data == "general":
-        dataset = Top500(cfg.top500_datadir, amino="General")
-        expand_factor = 1
-    elif cfg.data == "glycine":
-        dataset = Top500(cfg.top500_datadir, amino="Glycine")
-        expand_factor = 10
-    elif cfg.data == "proline":
-        dataset = Top500(cfg.top500_datadir, amino="Proline")
-        expand_factor = 18
-    elif cfg.data == "prepro":
-        dataset = Top500(cfg.top500_datadir, amino="Pre-Pro")
-        expand_factor = 20
-    elif cfg.data == "rna":
-        dataset = RNA(cfg.rna_datadir)
-        expand_factor = 14
-    elif cfg.data == "simple_bunny":
-        dataset = SimpleBunny(cfg.mesh_datadir)
-    elif cfg.data == "bunny10":
-        dataset = Bunny10(cfg.mesh_datadir)
-    elif cfg.data == "bunny50":
-        dataset = Bunny50(cfg.mesh_datadir)
-    elif cfg.data == "bunny100":
-        dataset = Bunny100(cfg.mesh_datadir)
-    elif cfg.data == "spot10":
-        dataset = Spot10(cfg.mesh_datadir)
-    elif cfg.data == "spot50":
-        dataset = Spot50(cfg.mesh_datadir)
-    elif cfg.data == "spot100":
-        dataset = Spot100(cfg.mesh_datadir)
-    elif cfg.data == "maze3v2":
-        dataset = Maze3v2(cfg.mesh_datadir)
-    elif cfg.data == "maze4v2":
-        dataset = Maze4v2(cfg.mesh_datadir)
-    elif cfg.data == "wrapped_torus":
-        manifold = FlatTorus()
-        dataset = Wrapped(
-            manifold,
-            cfg.wrapped.dim,
-            cfg.wrapped.n_mixtures,
-            cfg.wrapped.scale,
-            dataset_size=200000,
-        )
-    elif cfg.data == "wrapped_spd":
-        manifold = SPD()
-        d = cfg.wrapped.dim
-        n = manifold.matdim(d)
-        manifold = SPD(scale_std=0.5, scale_Id=3.0, base_expmap=False)
-        centers = manifold.vectorize(torch.eye(n) * 2.0).reshape(1, -1)
-
-        dataset = Wrapped(
-            manifold,
-            cfg.wrapped.dim,
-            cfg.wrapped.n_mixtures,
-            cfg.wrapped.scale,
-            centers=centers,
-            dataset_size=10000,
-        )
-    elif cfg.data == "eeg_1":
-        dataset = EEG(
-            cfg.eeg_datadir,
-            set="1",
-            Riem_geodesic=cfg.eeg.Riem_geodesic,
-            Riem_norm=cfg.eeg.Riem_norm,
-        )
-    elif cfg.data == "eeg_2a":
-        dataset = EEG(
-            cfg.eeg_datadir,
-            set="2a",
-            Riem_geodesic=cfg.eeg.Riem_geodesic,
-            Riem_norm=cfg.eeg.Riem_norm,
-        )
-    elif cfg.data == "eeg_2b":
-        dataset = EEG(
-            cfg.eeg_datadir,
-            set="2b",
-            Riem_geodesic=cfg.eeg.Riem_geodesic,
-            Riem_norm=cfg.eeg.Riem_norm,
-        )
-    elif cfg.data == "hyperbolic":
-        dataset = HyperbolicDatasetPair()
-    elif cfg.data == "images":
-        dataset = HyperbolicImages(cfg.get("images_datadir"), cfg.get("images_labels"))
-        # dataset = HyperbolicImages(cfg.get("images_datadir_A"), cfg.get("images_datadir_B"))
-    elif cfg.data == "hyper_uni2norm":
-        dataset = HyperbolicUniformToGaussian()
-    elif cfg.data == "euclidean":
-        dataset = EuclideanImages(cfg.get("euclidean_datadir"))
-    elif cfg.data == "checkerboard_sphere":
-        dataset = CheckerboardDataset(
-            manifold=SphereCurvature(c=float(cfg.general.curvature)),
-            manifold_name="sphere",
-            dim=int(cfg.general.dim),
-            n_samples=int(cfg.general.n_samples),
-        )
-    elif cfg.data == "checkerboard_poincare":
-        dataset = CheckerboardDataset(
-            manifold=PoincareBall(c=float(cfg.general.curvature)),
-            manifold_name="poincare",
-            dim=int(cfg.general.dim),
-            n_samples=int(cfg.general.n_samples),
-            tangent_scale=cfg.general.get("checkerboard_tangent_scale", 0.7),
-        )
-    elif cfg.data == "checkerboard_euclidean":
-        dataset = CheckerboardDataset(
-            manifold=Euclidean(),
-            manifold_name="euclidean",
-            dim=int(cfg.general.dim),
-            n_samples=int(cfg.general.n_samples),
-        )
-    elif cfg.data == "general_fm":
+    
+    if cfg.data == "general_fm":
         dataset = GeneralDataset(cfg)
-
     else:
-        raise ValueError("Unknown dataset option '{name}'")
+        raise ValueError(f"Unknown dataset option '{cfg.data}'")
     return dataset, expand_factor
 
 
@@ -1066,11 +719,4 @@ def get_loaders(cfg):
 
 def get_manifold(cfg):
     dataset, _ = _get_dataset(cfg)
-
-    if isinstance(dataset, MeshDataset):  # or isinstance(dataset, MeshDatasetPair):
-        manifold = dataset.manifold(
-            numeigs=cfg.mesh.numeigs, metric=Metric(cfg.mesh.metric), temp=cfg.mesh.temp
-        )
-        return manifold, dataset.dim
-    else:
-        return dataset.manifold, dataset.dim
+    return dataset.manifold, dataset.dim
