@@ -52,7 +52,7 @@ Common overrides:
 python train.py experiment=general_fm use_wandb=False
 
 # Switch manifold / curvature / dimension
-python train.py experiment=general_fm general.manifold=euclidean general.curvature=1.0 general.dim=3
+python train.py experiment=general_fm general.manifold=euclidean general.dim=3
 python train.py experiment=general_fm general.manifold=poincare  general.curvature=1.0 general.dim=3
 python train.py experiment=general_fm general.manifold=sphere    general.curvature=1.0 general.dim=3
 
