@@ -49,52 +49,64 @@ def main(cfg: DictConfig):
         if cfg.general.x1_dist == "gaussian-ring" or cfg.general.x1_dist == "gaussian":
             if cfg.general.manifold == "euclidean":
                 cfg.general.mean_x0 = [0.0] * dim
-                cfg.general.mean_x1 = [dist / math.sqrt(dim)] * dim
+                cfg.general.mean_x1 = [float(dist / math.sqrt(dim))] * dim
             
             if cfg.general.manifold == "poincare":
-                curvature = cfg.general.curvature
+                # curvature = cfg.general.curvature
 
-                u = torch.ones(dim)
-                u = u / torch.norm(u) 
+                # u = torch.ones(dim)
+                # u = u / torch.norm(u) 
 
-                rho = torch.tanh(torch.sqrt(torch.tensor(curvature)) * dist / 2.0) / torch.sqrt(torch.tensor(curvature))
-                x1 = rho * u
+                # rho = torch.tanh(torch.sqrt(torch.tensor(curvature)) * dist / 2.0) / torch.sqrt(torch.tensor(curvature))
+                # x1 = rho * u
 
+                # cfg.general.mean_x0 = [0.0] * dim
+                # cfg.general.mean_x1 = [float(f"{v:.8f}") for v in x1]
                 cfg.general.mean_x0 = [0.0] * dim
-                cfg.general.mean_x1 = [float(f"{v:.8f}") for v in x1]
+                cfg.general.mean_x1 = [float(dist / math.sqrt(dim))] * dim
+
 
             if cfg.general.manifold == "sphere":
-                curvature = cfg.general.curvature
+                # curvature = cfg.general.curvature
 
-                # sphere radius
-                R = 1.0 / math.sqrt(curvature)
+                # # sphere radius
+                # R = 1.0 / math.sqrt(curvature)
 
-                # geodesic angle corresponding to distance dist
-                theta = dist / R
+                # # geodesic angle corresponding to distance dist
+                # theta = dist / R
 
-                # north pole (mu0)
-                mu0 = torch.zeros(dim)
-                mu0[0] = R
+                # # north pole (mu0)
+                # mu0 = torch.zeros(dim)
+                # mu0[0] = R
 
-                # symmetric point at distance 'dist' from mu0
-                mu1 = torch.zeros(dim)
-                mu1[0] = R * math.cos(theta)
+                # # symmetric point at distance 'dist' from mu0
+                # mu1 = torch.zeros(dim)
+                # mu1[0] = R * math.cos(theta)
 
-                if dim < 2:
-                    raise ValueError("Sphere construction requires dim >= 2")
+                # if dim < 2:
+                #     raise ValueError("Sphere construction requires dim >= 2")
 
-                spread_val = R * math.sin(theta) / math.sqrt(dim - 1)
-                mu1[1:] = spread_val
+                # spread_val = R * math.sin(theta) / math.sqrt(dim - 1)
+                # mu1[1:] = spread_val
 
-                # save to cfg
-                cfg.general.mean_x0 = [float(f"{v:.7f}") for v in mu0]
-                cfg.general.mean_x1 = [float(f"{v:.7f}") for v in mu1]
+                # # save to cfg
+                # cfg.general.mean_x0 = [float(f"{v:.7f}") for v in mu0]
+                # cfg.general.mean_x1 = [float(f"{v:.7f}") for v in mu1]
 
-                if cfg.general.get("radius_x1", None) is not None:
-                    pi_R = math.pi * R
-                    cfg.general.radius_x1 = float(
-                        pi_R * torch.tanh(torch.tensor(cfg.general.radius_x1) / pi_R)
-                    )
+                # if cfg.general.get("radius_x1", None) is not None:
+                #     pi_R = math.pi * R
+                #     cfg.general.radius_x1 = float(
+                #         pi_R * torch.tanh(torch.tensor(cfg.general.radius_x1) / pi_R)
+                #     )
+                # Unit direction in the subspace orthogonal to the first axis.
+                direction = [0.0] * dim
+                spread_val = 1.0 / math.sqrt(dim - 1)
+                for i in range(1, dim):
+                    direction[i] = spread_val
+
+                cfg.general.mean_x0 = [0.0] * dim
+                cfg.general.mean_x1 = [float(dist * v) for v in direction]
+
         else:
             pass  # use YAML
 
