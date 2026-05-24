@@ -48,15 +48,8 @@ def main(cfg: DictConfig):
 
         if cfg.general.x1_dist == "gaussian-ring" or cfg.general.x1_dist == "gaussian":
             if cfg.general.manifold == "euclidean":
-                # cfg.general.mean_x0 = [0.0] * dim
-                # cfg.general.mean_x1 = [dist / math.sqrt(dim)] * dim
-
-
-                u = torch.ones(dim, dtype=torch.float32)
-                u = u / torch.norm(u)
-
-                cfg.general.mean_x0 = torch.zeros(dim, dtype=torch.float32)
-                cfg.general.mean_x1 = dist * u
+                cfg.general.mean_x0 = [0.0] * dim
+                cfg.general.mean_x1 = [float(dist / math.sqrt(dim))] * dim
             
             if cfg.general.manifold == "poincare":
                 # curvature = cfg.general.curvature
@@ -69,11 +62,8 @@ def main(cfg: DictConfig):
 
                 # cfg.general.mean_x0 = [0.0] * dim
                 # cfg.general.mean_x1 = [float(f"{v:.8f}") for v in x1]
-                u = torch.ones(dim)
-                u = u / torch.norm(u)
-
-                cfg.general.mean_x0 = torch.zeros(dim)
-                cfg.general.mean_x1 = dist * u
+                cfg.general.mean_x0 = [0.0] * dim
+                cfg.general.mean_x1 = [float(dist / math.sqrt(dim))] * dim
 
 
             if cfg.general.manifold == "sphere":
@@ -108,12 +98,14 @@ def main(cfg: DictConfig):
                 #     cfg.general.radius_x1 = float(
                 #         pi_R * torch.tanh(torch.tensor(cfg.general.radius_x1) / pi_R)
                 #     )
-                u = torch.zeros(dim)
-                u[1:] = 1.0
-                u = u / torch.norm(u)
+                # Unit direction in the subspace orthogonal to the first axis.
+                direction = [0.0] * dim
+                spread_val = 1.0 / math.sqrt(dim - 1)
+                for i in range(1, dim):
+                    direction[i] = spread_val
 
-                cfg.general.mean_x0 = torch.zeros(dim)
-                cfg.general.mean_x1 = math.dist * u
+                cfg.general.mean_x0 = [0.0] * dim
+                cfg.general.mean_x1 = [float(dist * v) for v in direction]
 
         else:
             pass  # use YAML
