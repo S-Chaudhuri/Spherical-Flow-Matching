@@ -1,7 +1,8 @@
 """Copyright (c) Meta Platforms, Inc. and affiliates."""
 
 import os
-from csv import reader
+import json
+import hashlib
 import random
 import numpy as np
 import torch
@@ -188,7 +189,10 @@ class GeneralDataset(Dataset):
             return z
         if self.manifold_name == "euclidean":
             return z
-        return z / (self.curvature ** 0.5)
+        curvature = abs(float(self.curvature))
+        if curvature == 0.0:
+            return z
+        return z / (curvature ** 0.5)
 
     def tangent_to_manifold(self, z):
         single = False
