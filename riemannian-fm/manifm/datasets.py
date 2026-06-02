@@ -10,12 +10,6 @@ from torch.utils.data import Dataset, DataLoader
 from manifm.manifolds import PoincareBall, Euclidean, SphereCurvature
 
 
-def load_csv(filename):
-    file = open(filename, "r")
-    lines = reader(file)
-    dataset = np.array(list(lines)[1:]).astype(np.float64)
-    return dataset
-
 class CheckerboardDataset(Dataset):
     """
     defines the checkerboard distribution on the square [-1,1]^2, on the black squares.
@@ -52,63 +46,6 @@ class CheckerboardDataset(Dataset):
 
         return (x / self.num_square * 2 - 1).float().squeeze(0)
 
-    def _wrap_sphere(self, xy):
-        lat = xy[0] * (torch.pi / 2)
-        lon = xy[1] * (torch.pi)
-
-        if self.dim == 3:
-            point = torch.stack(
-                [
-                    torch.cos(lat) * torch.cos(lon),
-                    torch.cos(lat) * torch.sin(lon),
-                    torch.sin(lat),
-                ]
-            )
-        elif self.dim == 2:
-            point = torch.stack([torch.cos(lon), torch.sin(lon)])
-        else:
-            # raise ValueError(f"checkerboard on sphere not implemented for dim={self.dim}")
-            # I am implementing for more dimensions but the prefered diminsions are 2 and 3)
-            point = torch.zeros(self.dim)
-            point[0] = torch.cos(lat) * torch.cos(lon)
-            point[1] = torch.cos(lat) * torch.sin(lon)
-            point[2] = torch.sin(lat)
-
-        point = point * self.manifold.radius
-        return self.manifold.projx(point.unsqueeze(0)).squeeze(0)
-
-    def _wrap_poincare(self, xy):
-        tangent = xy * self.tangent_scale
-
-        if self.dim > 2:
-            tangent = torch.cat([tangent, torch.zeros(self.dim - 2)])
-
-        return self.manifold.expmap0(tangent.unsqueeze(0)).squeeze(0)
-
-    def _wrap_euclidean(self, xy):
-        if self.dim == 2:
-            return xy
-        elif self.dim > 2:
-            point = torch.zeros(self.dim)
-            point[0] = xy[0]
-            point[1] = xy[1]
-            return point
-        else:
-            raise ValueError(f"checkerboard on euclidean requires dim>=2, got {self.dim}")
-
-    def __getitem__(self, idx):
-        xy = self._checkerboard2d()
-
-        if self.manifold_name == "sphere":
-            x1 = self._wrap_sphere(xy)
-        elif self.manifold_name == "poincare":
-            x1 = self._wrap_poincare(xy)
-        elif self.manifold_name == "euclidean":
-            x1 = self._wrap_euclidean(xy)
-        else:
-            raise ValueError(f"unknown manifold: {self.manifold_name}")
-
-        return x1
 
 class GeneralDataset(Dataset):
     """
@@ -177,9 +114,9 @@ class GeneralDataset(Dataset):
             self.eval_x1 = None
             self.eval_t = None
 
-    def check_mean(self, mean, manifold, tol=1e-5):
+    def check_point_on_manifold(self, mean, manifold, tol = 1e-5):
         """
-        Validates that mean(s) lie on the correct manifold.
+        Validates that mean(s) lie on the correct manifold
 
         Supports:
         - single mean: shape (d,)
@@ -243,7 +180,7 @@ class GeneralDataset(Dataset):
         else:
             raise ValueError(f"unknown manifold: {self.manifold_name}")
 
-        self.check_mean(origin, self.manifold_name)
+        self.check_point_on_manifold(origin, self.manifold_name)
         return origin
 
     def normalize_tangent(self, z):
@@ -606,5 +543,19 @@ def get_loaders(cfg):
 
 
 def get_manifold(cfg):
-    dataset, _ = _get_dataset(cfg)
-    return dataset.manifold, dataset.dim
+    gcfg = cfg.general
+
+    manifold_name = str(gcfg.manifold)
+    curvature = float(gcfg.get("curvature", 1.0))
+    dim = int(gcfg.dim)
+
+    if manifold_name == "sphere":
+        manifold = SphereCurvature(c = curvature)
+    elif manifold_name == "poincare":
+        manifold = PoincareBall(c = curvature)
+    elif manifold_name == "euclidean":
+        manifold = Euclidean()
+    else:
+        raise ValueError(f"unknown manifold: {manifold_name}")
+
+    return manifold, dim
