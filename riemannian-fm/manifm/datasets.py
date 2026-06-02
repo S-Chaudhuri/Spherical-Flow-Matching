@@ -246,59 +246,12 @@ class GeneralDataset(Dataset):
         self.check_mean(origin, self.manifold_name)
         return origin
 
-    def tangent_scale_factor(self):
-        """
-        Deterministic curvature-radius normalization:
-        - euclidean: 1
-        - sphere / poincare: 1 / sqrt(curvature)
-        """
-        if not self.gcfg.get("normalize_tangent_distributions", False):
-            return 1.0
-        if self.manifold_name == "euclidean":
-            return 1.0
-        return 1.0 / np.sqrt(self.curvature)
-
-    def normalize_sample_by_curvature(self, x):
-        """
-        Apply post-construction geodesic dilation
-            x -> exp_o(alpha * log_o(x))
-        to a sample x or batch x
-
-        This works for any distribution, because it transforms the sampled
-        points directly rather than distribution parameters
-        """
-        alpha = self.tangent_scale_factor()
-        if alpha == 1.0:
-            return x
-
-        single = False
-        if x.ndim == 1:
-            x = x.unsqueeze(0)
-            single = True
-
-        origin = self.reference_origin.to(device=x.device, dtype=x.dtype).view(1, -1)
-        origin = origin.expand_as(x)
-
-        if self.manifold_name == "euclidean":
-            x_new = origin + alpha * (x - origin)
-        else:
-            v = self.manifold.logmap(origin, x)
-            x_new = self.manifold.expmap(origin, alpha * v)
-            if hasattr(self.manifold, "projx"):
-                x_new = self.manifold.projx(x_new)
-
-        if single:
-            return x_new.squeeze(0)
-        return x_new
-
-
     def normalize_tangent(self, z):
         if not self.gcfg.get("normalize_tangent_distributions", False):
             return z
         if self.manifold_name == "euclidean":
             return z
         return z / (self.curvature ** 0.5)
-
 
     def tangent_to_manifold(self, z):
         single = False
@@ -406,71 +359,6 @@ class GeneralDataset(Dataset):
         z = self.normalize_tangent(z)
         x = self.tangent_to_manifold(z)
         return x            
-
-    def sample(self, dist_name, std = None, mean = None, radius = None):
-        if std is None:
-            std = 1.0
-
-        elif not torch.is_tensor(std) and not isinstance(std, (float, int)):
-            std = torch.tensor(std, dtype=torch.float32)
-
-        if mean is not None and not torch.is_tensor(mean):
-            mean = torch.tensor(mean, dtype=torch.float32)
-
-        dist_key = self._dist_key(dist_name)
-        self.check_mean(mean, self.manifold_name)
-
-        if dist_key == "uniform":
-            raise NotImplementedError("uniform sampling not implemented yet")
-        elif dist_key == "normal":
-            raise NotImplementedError("Euclidean normal not implemented yet")
-        elif dist_key == "gaussian":
-            if self.manifold_name == "euclidean":
-                sample = self.manifold.random_normal(self.dim, mean=mean, std=std)
-            else:
-                sample = self.manifold.wrapped_normal(self.dim, mean = mean, std = std)
-            return sample
-        elif dist_key == "gaussian-ring":
-            if self.manifold_name == "euclidean":
-                sample = self.manifold.random_gaussian_ring(dim = self.dim, mean = mean, std = std, radius = radius)
-                return sample
-            else: 
-                sample = self.manifold.wrapped_gaussian_ring(dim = self.dim, mean = mean, std = std, radius = radius)
-                return sample
-        elif dist_key == "mog":
-            K = len(std)
-
-            weights_cfg = self.gcfg.get("weights", None)
-            if weights_cfg is None:
-                weights = torch.ones(K) / K
-            else:
-                weights = torch.tensor(weights_cfg, dtype=torch.float32)
-                weights = weights / weights.sum()
-
-            k = torch.multinomial(weights, 1).item()
-
-            m = mean[k]
-            s = std[k]
-
-            if self.manifold_name == "euclidean":
-                sample = self.manifold.random_normal(self.dim, mean=m, std=s)
-            else:
-                sample = self.manifold.wrapped_normal(self.dim, mean=m, std=s)
-            return sample
-        elif dist_key == "checkerboard":
-            if self._checkerboard is None:
-                raise RuntimeError("CheckerboardDataset not initialized")
-            if self.manifold_name == "sphere":
-                return self._checkerboard._wrap_sphere(self._checkerboard._checkerboard2d())
-            elif self.manifold_name == "poincare":
-                return self._checkerboard._wrap_poincare(self._checkerboard._checkerboard2d())
-            elif self.manifold_name == "euclidean":
-                return self._checkerboard._wrap_euclidean(self._checkerboard._checkerboard2d())
-            else:
-                raise ValueError(f"checkerboard not supported for manifold '{self.manifold_name}'")
-
-        else:
-            raise ValueError(f"Unknown distribution: {dist_name}")
 
     def __len__(self):
         if self.x0_all is not None:
