@@ -321,8 +321,6 @@ class GeneralDataset(Dataset):
         artifacts_dir = os.path.join(os.getcwd(), "artifacts")
         os.makedirs(artifacts_dir, exist_ok=True)
 
-        out_path = os.path.join(artifacts_dir, "general_dataset_fixed_eval.pt")
-
         def _to_python(obj):
             if obj is None:
                 return None
@@ -367,6 +365,13 @@ class GeneralDataset(Dataset):
             # use a dedicated dataset seed if provided; otherwise fall back to the main seed.
             "fixed_dataset_seed": int(self.cfg.get("eval_seed", self.cfg.get("seed", 0))),
         }
+
+        meta_string = json.dumps(expected_meta, sort_keys = True, default = str)
+        meta_hash = hashlib.md5(meta_string.encode("utf-8")).hexdigest()[:12]
+        out_path = os.path.join(
+            artifacts_dir,
+            f"general_dataset_fixed_eval_{meta_hash}.pt",
+        )
 
         # try to load an existing artifact, but only if metadata matches.
         if os.path.exists(out_path):
