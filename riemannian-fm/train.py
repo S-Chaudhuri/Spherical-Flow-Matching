@@ -43,30 +43,34 @@ def main(cfg: DictConfig):
         pl.seed_everything(cfg.seed)
 
     def configure_dynamically(cfg):
-        dim = cfg.general.dim
+        dim = int(cfg.general.dim)
         dist = 0.5
 
-        if cfg.general.x1_dist == "gaussian-ring" or cfg.general.x1_dist == "gaussian":
-            if cfg.general.manifold == "euclidean":
-                cfg.general.mean_x0 = [0.0] * dim
-                cfg.general.mean_x1 = [float(dist / math.sqrt(dim))] * dim
-            
-            if cfg.general.manifold == "poincare":
-                cfg.general.mean_x0 = [0.0] * dim
-                cfg.general.mean_x1 = [float(dist / math.sqrt(dim))] * dim
+        if cfg.general.x1_dist == "gaussian":
+            cfg.general.mean_x0 = [0.0] * dim
 
+            if cfg.general.manifold in ["euclidean", "poincare"]:
+                direction = [1.0 / math.sqrt(dim)] * dim
 
-            if cfg.general.manifold == "sphere":
+            elif cfg.general.manifold == "sphere":
+                if dim < 2:
+                    raise ValueError("sphere requires dim >= 2")
                 direction = [0.0] * dim
                 spread_val = 1.0 / math.sqrt(dim - 1)
-                for i in range(1, dim):
-                    direction[i] = spread_val
+                for idx in range(1, dim):
+                    direction[idx] = spread_val
 
-                cfg.general.mean_x0 = [0.0] * dim
-                cfg.general.mean_x1 = [float(dist * v) for v in direction]
+            else:
+                raise ValueError(f"unknown manifold: {cfg.general.manifold}")
+
+            cfg.general.mean_x1 = [float(dist * v) for v in direction]
+
+        elif cfg.general.x1_dist == "gaussian-ring":
+            cfg.general.mean_x0 = [0.0] * dim
+            cfg.general.mean_x1 = [0.0] * dim
 
         else:
-            pass  # use YAML
+            pass                        # use YAML
 
     configure_dynamically(cfg)
 

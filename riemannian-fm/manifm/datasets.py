@@ -255,11 +255,13 @@ class GeneralDataset(Dataset):
                 raise ValueError("gaussian-ring requires radius")
 
             direction = torch.randn(self.dim, dtype = mean.dtype, device = mean.device)
-            direction = direction / torch.clamp(torch.norm(direction), min = 1e-8)
 
+            if self.manifold_name == "sphere":
+                direction[0] = 0.0
+
+            direction = direction / torch.clamp(torch.norm(direction), min = 1e-8)
             radial_noise = torch.randn((), dtype = mean.dtype, device = mean.device) * float(std)
             r = float(radius) + radial_noise
-
             return mean + r * direction
 
         elif dist_key == "mog":
@@ -473,7 +475,7 @@ class GeneralDataset(Dataset):
             self.eval_x0 = eval_x0
             self.eval_x1 = eval_x1
             self.eval_t = eval_t
-
+            
         finally:
             # restore RNG state so this helper does not affect the rest of the run.
             torch.random.set_rng_state(torch_state)
