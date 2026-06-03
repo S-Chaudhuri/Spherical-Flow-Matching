@@ -59,15 +59,15 @@ optim:
   val_batch_size: 500
   lr: 1e-4
 
-val_every: 1000
-early_stopping_patience: 100
+val_every: 100
+early_stopping_patience: 400
 div_mode: rademacher
 eval_projx: False
 local_coords: False
 normalize_loglik: False
 visualize: True
 
-delete_checkpoints_after_use: True
+delete_checkpoints_after_use: False
 
 eval_n_pairs: 2000 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same n pairs
 eval_t_values: [0.0,0.2, 0.5, 0.8, 1.0]
