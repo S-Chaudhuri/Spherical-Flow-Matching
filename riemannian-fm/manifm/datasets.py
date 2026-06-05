@@ -254,6 +254,12 @@ class GeneralDataset(Dataset):
             if radius is None:
                 raise ValueError("gaussian-ring requires radius")
 
+            if torch.norm(mean) > 1e-8:
+                raise ValueError(
+                    "gaussian-ring is defined to be centered at the tangent-space origin;"
+                    "set mean_x0/mean_x1 to null or zero"
+                )
+
             direction = torch.randn(self.dim, dtype = mean.dtype, device = mean.device)
 
             if self.manifold_name == "sphere":
@@ -262,7 +268,7 @@ class GeneralDataset(Dataset):
             direction = direction / torch.clamp(torch.norm(direction), min = 1e-8)
             radial_noise = torch.randn((), dtype = mean.dtype, device = mean.device) * float(std)
             r = float(radius) + radial_noise
-            return mean + r * direction
+            return r * direction
 
         elif dist_key == "mog":
             if mean.ndim != 2:
