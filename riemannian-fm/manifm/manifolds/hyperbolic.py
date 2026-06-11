@@ -56,27 +56,3 @@ class PoincareBall(geoopt_PoincareBall):
         dist = self.dist(mean, x)
         logprob = -d/2*const - dist**2/(2*std*std) +(d-1)*(torch.log(dist + 1e-9) - torch.log(torch.sinh(dist)+ 1e-9))      
         return logprob
-
-    def wrapped_gaussian_ring(self, dim, mean, std, radius):
-        """
-        Gaussian ring on Poincaré ball.
-        """
-        # noise = torch.randn(dim, device=mean.device) * std
-        # v_noise = self.proju(mean, noise)
-        # gaussian_sample = self.expmap(mean, v_noise)  # Gaussian spread around mean
-
-        # z = torch.randn(dim, device=mean.device)
-        # v = self.proju(gaussian_sample, z)
-        # v = v / (v.norm() + 1e-8)
-        # sample = self.expmap(gaussian_sample, radius * v)
-        
-        # return sample
-
-        z = torch.randn(dim)
-        u = self.proju(mean, z)            # project onto tangent space at mean
-        u = u / u.norm()                   # unit tangent direction
-
-        r = torch.normal(radius, std, size=())
-        u = u * r                         
-
-        return self.expmap(mean, u)      
