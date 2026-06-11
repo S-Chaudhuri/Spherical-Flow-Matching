@@ -47,6 +47,23 @@ class CheckerboardDataset(Dataset):
 
         return (x / self.num_square * 2 - 1).float().squeeze(0)
 
+    def _checkerboard_nd(self):
+    # this is a sample place holder, usable but may be subject to change.   
+        while True:
+            
+            x = torch.rand(self.intrinsic_dim) * self.num_square
+
+            
+            cell = torch.floor(x).to(torch.int)
+
+            
+            parity = cell.sum() % 2
+
+            if parity == 1:
+                # normalize to [-1, 1]^d scaled by geodesic_radius
+                v = (x / self.num_square * 2 - 1) * self.geodesic_radius
+                return v
+
 
 class GeneralDataset(Dataset):
     """
@@ -194,6 +211,20 @@ class GeneralDataset(Dataset):
             return z
         return z / (curvature ** 0.5)
 
+    def sample_unit_tangent_direction(self, dtype = torch.float32, device = None):
+        if self.manifold_name == "sphere":
+            if self.dim < 2:
+                raise ValueError("sphere gaussian-ring requires ambient dim >= 2")
+            direction = torch.zeros(self.dim, dtype = dtype, device = device)
+            tangent_part = torch.randn(self.dim - 1, dtype = dtype, device = device)
+            tangent_part = tangent_part / torch.clamp(torch.norm(tangent_part), min = 1e-8)
+            direction[1:] = tangent_part
+            return direction            # first coordinate is zero: north pole
+
+        direction = torch.randn(self.dim, dtype = dtype, device = device)
+        direction = direction / torch.clamp(torch.norm(direction), min = 1e-8)
+        return direction
+
     def tangent_to_manifold(self, z):
         single = False
         if z.ndim == 1:
@@ -234,40 +265,53 @@ class GeneralDataset(Dataset):
 
 
     def sample_tangent(self, dist_name, std = None, mean = None, radius = None):
-        if std is None:
-            std = 1.0
+        dist_key = self._dist_key(dist_name)
+        std_was_none = std is None
+
         if mean is None:
             mean = torch.zeros(self.dim, dtype = torch.float32)
         elif not torch.is_tensor(mean):
             mean = torch.tensor(mean, dtype = torch.float32)
         else:
             mean = mean.detach().clone().float()
-        if not torch.is_tensor(std) and not isinstance(std, (float, int)):
-            std = torch.tensor(std, dtype = torch.float32)
 
-        dist_key = self._dist_key(dist_name)
+        if dist_key != "gaussian-ring" and std is None:
+            std = 1.0
+
+        if std is not None and not torch.is_tensor(std) and not isinstance(std, (float, int)):
+            std = torch.tensor(std, dtype = torch.float32)
 
         if dist_key == "gaussian":
             eps = torch.randn(self.dim, dtype = mean.dtype, device = mean.device) * float(std)
             return mean + eps
+
         elif dist_key == "gaussian-ring":
             if radius is None:
                 raise ValueError("gaussian-ring requires radius")
+            if std_was_none:
+                raise ValueError("gaussian-ring requires radial standard deviation std")
 
+            radius = float(radius)
+            std = float(std)
+
+            if radius <= 0.0:
+                raise ValueError("gaussian-ring radius must be positive")
+            if std < 0.0:
+                raise ValueError("gaussian-ring radial std must be non-negative")
             if torch.norm(mean) > 1e-8:
                 raise ValueError(
-                    "gaussian-ring is defined to be centered at the tangent-space origin;"
+                    "gaussian-ring is defined to be centered at the tangent-space origin; "
                     "set mean_x0/mean_x1 to null or zero"
                 )
 
-            direction = torch.randn(self.dim, dtype = mean.dtype, device = mean.device)
+            direction = self.sample_unit_tangent_direction(
+                dtype = mean.dtype,
+                device = mean.device,
+            )
 
-            if self.manifold_name == "sphere":
-                direction[0] = 0.0
+            radial_noise = torch.randn((), dtype = mean.dtype, device = mean.device) * std
+            r = torch.tensor(radius, dtype = mean.dtype, device = mean.device) + radial_noise
 
-            direction = direction / torch.clamp(torch.norm(direction), min = 1e-8)
-            radial_noise = torch.randn((), dtype = mean.dtype, device = mean.device) * float(std)
-            r = float(radius) + radial_noise
             return r * direction
 
         elif dist_key == "mog":

@@ -2,6 +2,7 @@
 
 from typing import Any
 import os
+import glob
 import traceback
 import numpy as np
 import matplotlib.pyplot as plt
@@ -131,13 +132,27 @@ class ManifoldFMLitModule(pl.LightningModule):
         art.add_file(path)
         run.log_artifact(art)
 
+    def _resolve_fixed_eval_path(self):
+        if os.path.exists(self._fixed_eval_path):
+            return self._fixed_eval_path
+
+        pattern = os.path.join("artifacts", "general_dataset_fixed_eval_*.pt")
+        candidates = [p for p in glob.glob(pattern) if os.path.isfile(p)]
+
+        if len(candidates) == 0:
+            return None
+
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return candidates[0]
+
     def on_fit_start(self) -> None:
         # save-once items at the beginning are produced by GeneralDataset and written to
         # artifacts/general_dataset_fixed_eval.pt. If present, upload it as a W&B artifact.
         if getattr(self, "trainer", None) is None or not self.trainer.is_global_zero:
             return
-        if self.cfg.get("upload_fixed_eval", False) and os.path.exists(self._fixed_eval_path):
-            self._wandb_log_file("fixed_eval_inputs", self._fixed_eval_path, type_name="fixed_eval")
+        fixed_eval_path = self._resolve_fixed_eval_path()
+        if self.cfg.get("upload_fixed_eval", False) and fixed_eval_path is not None:
+            self._wandb_log_file("fixed_eval_inputs", fixed_eval_path, type_name="fixed_eval")
 
     @torch.no_grad()
     def on_fit_end(self) -> None:
@@ -146,13 +161,14 @@ class ManifoldFMLitModule(pl.LightningModule):
             return
 
         # if there is no fixed-eval input file, there is nothing to compute.
-        if not os.path.exists(self._fixed_eval_path):
+        fixed_eval_path = self._resolve_fixed_eval_path()
+        if fixed_eval_path is None:
             return
 
         os.makedirs(os.path.dirname(self._final_eval_path), exist_ok=True)
 
         # load the fixed evaluation inputs saved by GeneralDataset.
-        fixed = torch.load(self._fixed_eval_path, map_location="cpu")
+        fixed = torch.load(fixed_eval_path, map_location="cpu")
         eval_x0 = fixed.get("eval_x0")
         eval_x1 = fixed.get("eval_x1")
         eval_t = fixed.get("eval_t")
@@ -255,7 +271,7 @@ class ManifoldFMLitModule(pl.LightningModule):
         # If we are not uploading the fixed-eval inputs, delete them after use to save space.
         if not self.cfg.get("upload_fixed_eval", False):
             try:
-                os.remove(self._fixed_eval_path)
+                os.remove(fixed_eval_path)
             except Exception:
                 pass
     
