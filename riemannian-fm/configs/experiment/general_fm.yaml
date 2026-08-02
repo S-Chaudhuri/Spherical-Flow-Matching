@@ -28,7 +28,8 @@ checkerboard:
 metrics_used:
   sinkhorn_knopp: True
   tangent_sinkhorn_knopp: True
-  mmd: False
+  mmd: True                             
+  tangent_mmd: True                     
   epsilon_coverage: True
   epsilon_precision: True
   frechet_variance: True
@@ -36,13 +37,16 @@ metrics_used:
   stability: True
   rfm: True
   volume_scaling: True
+  snr: True                            
 
 metrics_param:
   sinkhorn_blur: 0.05
   coverage_eps_multiplier: 1.0
   normalize_tangent_sinkhorn: true
+  snr_n_boot: 30                        
+  snr_frac: 0.8                         
 
-save_densities: False
+save_densities: True                    
 
 model:
   d_model: 1024
@@ -56,7 +60,7 @@ model:
 optim:
   num_iterations: 20000
   batch_size: 512
-  val_batch_size: 500
+  val_batch_size: 2000                  
   lr: 1e-4
 
 val_every: 100
@@ -69,7 +73,7 @@ visualize: True
 
 delete_checkpoints_after_use: False
 
-eval_n_pairs: 2000 # if eval_n_pairs is equal to n_samples, then the fixed eval subset will be the same n pairs
+eval_n_pairs: 5000 
 eval_t_values: [0.0,0.2, 0.5, 0.8, 1.0]
 save_artifacts: True
 upload_fixed_eval: False  # upload general_dataset_fixed_eval.pt to WandB

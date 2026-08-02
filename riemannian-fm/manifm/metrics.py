@@ -24,6 +24,7 @@ class ManifoldMetricHandler:
                 "sinkhorn_knopp": True,
                 "tangent_sinkhorn_knopp": True,
                 "mmd": True,
+                "tangent_mmd": True,
                 "epsilon_coverage": True,
                 "epsilon_precision": True,
                 "frechet_variance": True,
@@ -32,6 +33,7 @@ class ManifoldMetricHandler:
                 "stability": True,
                 "rfm": True,
                 "volume_scaling": True,
+                "snr": True,
             },
         )
         self.metrics_params = cfg.get("metrics_param", {}) or {} # parameters for metrics, e.g. blur for Sinkhorn-Knopp
@@ -136,6 +138,44 @@ class ManifoldMetricHandler:
         val = torch.clamp(val, min = 0.0) ** (1.0 / p)
         return val
     
+
+    def calculate_with_snr(self, metric_fn, x_gen, x_real, n_boot=30, frac=0.8, **kwargs):
+        """
+        Estimate mean, std and signal-to-noise ratio (SNR = mean/std) of a
+        metric by resampling (without replacement) sub-batches of the
+        evaluation set. This is the estimation-noise SNR: it holds the
+        trained model fixed and only resamples which points are scored.
+
+        NOTE: this captures evaluation-batch noise only. For noise that also
+        includes training variance across seeds, compute this metric once
+        per trained seed instead and take mean/std across seeds -- do not
+        conflate the two noise sources when comparing D_r vs D_e.
+
+        metric_fn: any of self.calculate_sinkhorn_divergence,
+                   self.calculate_tangent_sinkhorn, self.calculate_mmd,
+                   self.calculate_tangent_mmd, etc.
+        n_boot: number of resamples.
+        frac: fraction of each of x_gen/x_real used per resample.
+        """
+        n_gen = x_gen.shape[0]
+        n_real = x_real.shape[0]
+        sub_n_gen = max(2, int(frac * n_gen))
+        sub_n_real = max(2, int(frac * n_real))
+
+        vals = []
+        for _ in range(n_boot):
+            idx_g = torch.randperm(n_gen, device=x_gen.device)[:sub_n_gen]
+            idx_r = torch.randperm(n_real, device=x_real.device)[:sub_n_real]
+            with torch.no_grad():
+                v = metric_fn(x_gen[idx_g], x_real[idx_r], **kwargs)
+            vals.append(v.detach())
+
+        vals = torch.stack(vals)
+        mean = vals.mean()
+        std = vals.std(unbiased=True)
+        snr = mean / torch.clamp(std, min=1e-8)
+        return {"mean": mean, "std": std, "snr": snr}
+
 
     def scaled_dist(self, x, y):
         if self.m_type == "euclidean":
@@ -265,17 +305,10 @@ class ManifoldMetricHandler:
             return dist_matrix
 
 
-    def calculate_mmd(self, x_gen, x_real, sigma=None):
-        """
-        MMD with geodesic RBF kernel
-        """
-        # generated samples pairwise distances
-        dxx = self.pairwise_dist(x_gen, x_gen)
-        # real samples pairwise distances
-        dyy = self.pairwise_dist(x_real, x_real)
-        # distances between generated and real
-        dxy = self.pairwise_dist(x_gen, x_real)
-
+    def _mmd_from_distances(self, dxx, dyy, dxy, sigma=None):
+        """ shared RBF-kernel MMD computation given precomputed pairwise
+        distance matrices; used by both the geodesic (D_r) and
+        tangent-space (D_e) MMD variants below """
         if sigma is None:  # use adaptive sigma if not provided
             # flatten all distances and remove non-zero
             vals = dxy.detach().flatten()
@@ -292,15 +325,52 @@ class ManifoldMetricHandler:
         return kxx.mean() + kyy.mean() - 2 * kxy.mean()
 
 
+    def calculate_mmd(self, x_gen, x_real, sigma=None):
+        """
+        D_r: MMD with geodesic RBF kernel (pairwise geodesic distances)
+        """
+        # generated samples pairwise distances
+        dxx = self.pairwise_dist(x_gen, x_gen)
+        # real samples pairwise distances
+        dyy = self.pairwise_dist(x_real, x_real)
+        # distances between generated and real
+        dxy = self.pairwise_dist(x_gen, x_real)
+
+        return self._mmd_from_distances(dxx, dyy, dxy, sigma)
+
+
+    def calculate_tangent_mmd(self, x_gen, x_real, sigma=None):
+        """
+        D_e: MMD with Euclidean RBF kernel, computed after projecting both
+        distributions to the tangent space at the fixed origin via the
+        logarithmic map (same projection used by calculate_tangent_sinkhorn).
+        This is the direct D_e counterpart to calculate_mmd's D_r.
+        """
+        v_gen = self.tangent_coordinates_scaled(x_gen)
+        v_real = self.tangent_coordinates_scaled(x_real)
+
+        dxx = torch.cdist(v_gen, v_gen, p=2)
+        dyy = torch.cdist(v_real, v_real, p=2)
+        dxy = torch.cdist(v_gen, v_real, p=2)
+
+        return self._mmd_from_distances(dxx, dyy, dxy, sigma)
+
+
     def calculate_epsilon_coverage(
         self,
         x_gen,
         x_real,
         eps=None,
         eps_multiplier=None,
+        return_eps=False,
     ):
         """
         Measures how much of the target support is reached by generated samples
+
+        return_eps: also return the (possibly auto-derived) eps threshold used,
+        since it is itself derived from nearest-neighbour distances and can
+        drift with dimension -- logging it separately lets us tell whether a
+        change in coverage is due to the metric or due to eps shifting.
         """
         d = self.pairwise_dist(x_real, x_gen)
 
@@ -315,7 +385,11 @@ class ManifoldMetricHandler:
             eps = eps_multiplier * eps
 
         nearest = d.min(dim=1).values
-        return (nearest <= eps).float().mean()
+        coverage = (nearest <= eps).float().mean()
+
+        if return_eps:
+            return coverage, eps
+        return coverage
 
 
     def calculate_epsilon_precision(
@@ -324,9 +398,12 @@ class ManifoldMetricHandler:
         x_real,
         eps=None,
         eps_multiplier=None,
+        return_eps=False,
     ):
         """
         Measures how many generated samples lie within epsilon of the target support
+
+        return_eps: see note in calculate_epsilon_coverage.
         """
         d = self.pairwise_dist(x_gen, x_real)
 
@@ -341,7 +418,11 @@ class ManifoldMetricHandler:
             eps = eps_multiplier * eps
 
         nearest = d.min(dim=1).values
-        return (nearest <= eps).float().mean()
+        precision = (nearest <= eps).float().mean()
+
+        if return_eps:
+            return precision, eps
+        return precision
 
 
     def _norm(self, v, x):
@@ -704,18 +785,88 @@ class ManifoldMetricHandler:
                         tangent_sinkhorn_val / torch.clamp(sinkhorn_val, min = 1e-8)
                     )
 
+            mmd_val = None
             if self.metrics_used.get("mmd", False):
-                results["val_sample/mmd"] = self.calculate_mmd(pred, target)
+                mmd_val = self.calculate_mmd(pred, target)
+                results["val_sample/mmd"] = mmd_val
+
+            if self.metrics_used.get("tangent_mmd", False):
+                tangent_mmd_val = self.calculate_tangent_mmd(pred, target)
+                results["val_sample/tangent_mmd"] = tangent_mmd_val
+                if mmd_val is not None:
+                    results["val_sample/tangent_to_geodesic_mmd_ratio"] = (
+                        tangent_mmd_val / torch.clamp(mmd_val, min = 1e-8)
+                    )
 
             if self.metrics_used.get("epsilon_coverage", False):
-                results["val_sample/epsilon_coverage"] = (
-                    self.calculate_epsilon_coverage(pred, target)
+                coverage, eps_cov = self.calculate_epsilon_coverage(
+                    pred, target, return_eps = True
                 )
+                results["val_sample/epsilon_coverage"] = coverage
+                results["val_sample/epsilon_coverage_eps"] = eps_cov
 
             if self.metrics_used.get("epsilon_precision", False):
-                results["val_sample/epsilon_precision"] = (
-                    self.calculate_epsilon_precision(pred, target)
+                precision, eps_prec = self.calculate_epsilon_precision(
+                    pred, target, return_eps = True
                 )
+                results["val_sample/epsilon_precision"] = precision
+
+            if self.metrics_used.get("snr", False):
+                # bootstrap-based SNR = mean/std, comparing D_r vs D_e noise levels
+                # (this is evaluation-batch noise; combine with cross-seed
+                # mean/std computed downstream from multiple training runs
+                # for the full training+evaluation noise picture)
+                n_boot = self.metrics_params.get("snr_n_boot", 30)
+                frac = self.metrics_params.get("snr_frac", 0.8)
+
+                snr_sinkhorn_r = snr_sinkhorn_e = None
+                if self.metrics_used.get("sinkhorn_knopp", False):
+                    snr_sinkhorn_r = self.calculate_with_snr(
+                        self.calculate_sinkhorn_divergence, pred, target,
+                        n_boot = n_boot, frac = frac,
+                    )
+                    results["val_sample/snr_sinkhorn_r_mean"] = snr_sinkhorn_r["mean"]
+                    results["val_sample/snr_sinkhorn_r_std"] = snr_sinkhorn_r["std"]
+                    results["val_sample/snr_sinkhorn_r"] = snr_sinkhorn_r["snr"]
+
+                if self.metrics_used.get("tangent_sinkhorn_knopp", False):
+                    snr_sinkhorn_e = self.calculate_with_snr(
+                        self.calculate_tangent_sinkhorn, pred, target,
+                        n_boot = n_boot, frac = frac,
+                    )
+                    results["val_sample/snr_sinkhorn_e_mean"] = snr_sinkhorn_e["mean"]
+                    results["val_sample/snr_sinkhorn_e_std"] = snr_sinkhorn_e["std"]
+                    results["val_sample/snr_sinkhorn_e"] = snr_sinkhorn_e["snr"]
+
+                if snr_sinkhorn_r is not None and snr_sinkhorn_e is not None:
+                    results["val_sample/snr_ratio_sinkhorn_r_over_e"] = (
+                        snr_sinkhorn_r["snr"] / torch.clamp(snr_sinkhorn_e["snr"], min = 1e-8)
+                    )
+
+                snr_mmd_r = snr_mmd_e = None
+                if self.metrics_used.get("mmd", False):
+                    snr_mmd_r = self.calculate_with_snr(
+                        self.calculate_mmd, pred, target,
+                        n_boot = n_boot, frac = frac,
+                    )
+                    results["val_sample/snr_mmd_r_mean"] = snr_mmd_r["mean"]
+                    results["val_sample/snr_mmd_r_std"] = snr_mmd_r["std"]
+                    results["val_sample/snr_mmd_r"] = snr_mmd_r["snr"]
+
+                if self.metrics_used.get("tangent_mmd", False):
+                    snr_mmd_e = self.calculate_with_snr(
+                        self.calculate_tangent_mmd, pred, target,
+                        n_boot = n_boot, frac = frac,
+                    )
+                    results["val_sample/snr_mmd_e_mean"] = snr_mmd_e["mean"]
+                    results["val_sample/snr_mmd_e_std"] = snr_mmd_e["std"]
+                    results["val_sample/snr_mmd_e"] = snr_mmd_e["snr"]
+
+                if snr_mmd_r is not None and snr_mmd_e is not None:
+                    results["val_sample/snr_ratio_mmd_r_over_e"] = (
+                        snr_mmd_r["snr"] / torch.clamp(snr_mmd_e["snr"], min = 1e-8)
+                    )
+                results["val_sample/epsilon_precision_eps"] = eps_prec
 
             if self.metrics_used.get("frechet_variance", False):
                 frechet_pred = self.calculate_frechet_variance(pred)
