@@ -27,8 +27,12 @@ class ManifoldMetricHandler:
                 "tangent_mmd": True,
                 "epsilon_coverage": True,
                 "epsilon_precision": True,
+                "tangent_epsilon_coverage": True,
+                "tangent_epsilon_precision": True,
                 "frechet_variance": True,
+                "tangent_frechet_variance": True,
                 "dispersion": True,
+                "tangent_dispersion": True,
                 "radial": True,
                 "stability": True,
                 "rfm": True,
@@ -143,19 +147,7 @@ class ManifoldMetricHandler:
         """
         Estimate mean, std and signal-to-noise ratio (SNR = mean/std) of a
         metric by resampling (without replacement) sub-batches of the
-        evaluation set. This is the estimation-noise SNR: it holds the
-        trained model fixed and only resamples which points are scored.
-
-        NOTE: this captures evaluation-batch noise only. For noise that also
-        includes training variance across seeds, compute this metric once
-        per trained seed instead and take mean/std across seeds -- do not
-        conflate the two noise sources when comparing D_r vs D_e.
-
-        metric_fn: any of self.calculate_sinkhorn_divergence,
-                   self.calculate_tangent_sinkhorn, self.calculate_mmd,
-                   self.calculate_tangent_mmd, etc.
-        n_boot: number of resamples.
-        frac: fraction of each of x_gen/x_real used per resample.
+        evaluation set.
         """
         n_gen = x_gen.shape[0]
         n_real = x_real.shape[0]
@@ -194,7 +186,7 @@ class ManifoldMetricHandler:
         self,
         x_gen,
         x_real,
-        p = 1,  # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
+        p = 1,
         blur = None,
     ):
         """
@@ -309,19 +301,16 @@ class ManifoldMetricHandler:
         """ shared RBF-kernel MMD computation given precomputed pairwise
         distance matrices; used by both the geodesic (D_r) and
         tangent-space (D_e) MMD variants below """
-        if sigma is None:  # use adaptive sigma if not provided
-            # flatten all distances and remove non-zero
+        if sigma is None:
             vals = dxy.detach().flatten()
             vals = vals[vals > 0]
-            sigma = torch.median(vals)  # = median of positive distances; then clamp
+            sigma = torch.median(vals)
             sigma = torch.clamp(sigma, min=1e-6)
 
-            # RBF kernel for generated, real, and cross samples
         kxx = torch.exp(-(dxx**2) / (2 * sigma**2))
         kyy = torch.exp(-(dyy**2) / (2 * sigma**2))
         kxy = torch.exp(-(dxy**2) / (2 * sigma**2))
 
-        # return MMD statistic
         return kxx.mean() + kyy.mean() - 2 * kxy.mean()
 
 
@@ -329,11 +318,8 @@ class ManifoldMetricHandler:
         """
         D_r: MMD with geodesic RBF kernel (pairwise geodesic distances)
         """
-        # generated samples pairwise distances
         dxx = self.pairwise_dist(x_gen, x_gen)
-        # real samples pairwise distances
         dyy = self.pairwise_dist(x_real, x_real)
-        # distances between generated and real
         dxy = self.pairwise_dist(x_gen, x_real)
 
         return self._mmd_from_distances(dxx, dyy, dxy, sigma)
@@ -344,7 +330,6 @@ class ManifoldMetricHandler:
         D_e: MMD with Euclidean RBF kernel, computed after projecting both
         distributions to the tangent space at the fixed origin via the
         logarithmic map (same projection used by calculate_tangent_sinkhorn).
-        This is the direct D_e counterpart to calculate_mmd's D_r.
         """
         v_gen = self.tangent_coordinates_scaled(x_gen)
         v_real = self.tangent_coordinates_scaled(x_real)
@@ -356,6 +341,39 @@ class ManifoldMetricHandler:
         return self._mmd_from_distances(dxx, dyy, dxy, sigma)
 
 
+    def _epsilon_ball_stat(
+        self,
+        d_cross,
+        d_self_ref,
+        eps=None,
+        eps_multiplier=None,
+        return_eps=False,
+    ):
+        """
+        Shared epsilon-ball coverage/precision computation given precomputed
+        distance matrices. d_cross: distances used for the nearest-neighbour
+        test (rows = query set). d_self_ref: within-real-set distances used
+        to auto-derive eps from the median nearest-neighbour distance, if eps
+        is not given explicitly. Used by both the geodesic (D_r) and
+        tangent-space (D_e) coverage/precision variants below.
+        """
+        if eps_multiplier is None:
+            eps_multiplier = self.metrics_params.get("coverage_eps_multiplier", 1.0)
+
+        if eps is None:
+            n = d_self_ref.shape[0]
+            d_self_ref = d_self_ref + torch.eye(n, device=d_self_ref.device) * 1e9
+            eps = d_self_ref.min(dim=1).values.median()
+            eps = eps_multiplier * eps
+
+        nearest = d_cross.min(dim=1).values
+        stat = (nearest <= eps).float().mean()
+
+        if return_eps:
+            return stat, eps
+        return stat
+
+
     def calculate_epsilon_coverage(
         self,
         x_gen,
@@ -365,31 +383,12 @@ class ManifoldMetricHandler:
         return_eps=False,
     ):
         """
-        Measures how much of the target support is reached by generated samples
-
-        return_eps: also return the (possibly auto-derived) eps threshold used,
-        since it is itself derived from nearest-neighbour distances and can
-        drift with dimension -- logging it separately lets us tell whether a
-        change in coverage is due to the metric or due to eps shifting.
+        D_r: measures how much of the target support is reached by generated
+        samples, using geodesic distances.
         """
-        d = self.pairwise_dist(x_real, x_gen)
-
-        if eps_multiplier is None:
-            eps_multiplier = self.metrics_params.get("coverage_eps_multiplier", 1.0)
-
-        if eps is None:
-            d_real = self.pairwise_dist(x_real, x_real)
-            n = x_real.shape[0]
-            d_real = d_real + torch.eye(n, device=x_real.device) * 1e9
-            eps = d_real.min(dim=1).values.median()
-            eps = eps_multiplier * eps
-
-        nearest = d.min(dim=1).values
-        coverage = (nearest <= eps).float().mean()
-
-        if return_eps:
-            return coverage, eps
-        return coverage
+        d_cross = self.pairwise_dist(x_real, x_gen)
+        d_self_ref = self.pairwise_dist(x_real, x_real)
+        return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
 
 
     def calculate_epsilon_precision(
@@ -401,28 +400,50 @@ class ManifoldMetricHandler:
         return_eps=False,
     ):
         """
-        Measures how many generated samples lie within epsilon of the target support
-
-        return_eps: see note in calculate_epsilon_coverage.
+        D_r: measures how many generated samples lie within epsilon of the
+        target support, using geodesic distances.
         """
-        d = self.pairwise_dist(x_gen, x_real)
+        d_cross = self.pairwise_dist(x_gen, x_real)
+        d_self_ref = self.pairwise_dist(x_real, x_real)
+        return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
 
-        if eps_multiplier is None:
-            eps_multiplier = self.metrics_params.get("coverage_eps_multiplier", 1.0)
 
-        if eps is None:
-            d_real = self.pairwise_dist(x_real, x_real)
-            n = x_real.shape[0]
-            d_real = d_real + torch.eye(n, device=x_real.device) * 1e9
-            eps = d_real.min(dim=1).values.median()
-            eps = eps_multiplier * eps
+    def calculate_tangent_epsilon_coverage(
+        self,
+        x_gen,
+        x_real,
+        eps=None,
+        eps_multiplier=None,
+        return_eps=False,
+    ):
+        """
+        D_e: same as calculate_epsilon_coverage but computed in tangent-space
+        (Euclidean) coordinates instead of geodesic distances.
+        """
+        v_gen = self.tangent_coordinates_scaled(x_gen)
+        v_real = self.tangent_coordinates_scaled(x_real)
+        d_cross = torch.cdist(v_real, v_gen, p=2)
+        d_self_ref = torch.cdist(v_real, v_real, p=2)
+        return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
 
-        nearest = d.min(dim=1).values
-        precision = (nearest <= eps).float().mean()
 
-        if return_eps:
-            return precision, eps
-        return precision
+    def calculate_tangent_epsilon_precision(
+        self,
+        x_gen,
+        x_real,
+        eps=None,
+        eps_multiplier=None,
+        return_eps=False,
+    ):
+        """
+        D_e: same as calculate_epsilon_precision but computed in tangent-space
+        (Euclidean) coordinates instead of geodesic distances.
+        """
+        v_gen = self.tangent_coordinates_scaled(x_gen)
+        v_real = self.tangent_coordinates_scaled(x_real)
+        d_cross = torch.cdist(v_gen, v_real, p=2)
+        d_self_ref = torch.cdist(v_real, v_real, p=2)
+        return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
 
 
     def _norm(self, v, x):
@@ -466,15 +487,15 @@ class ManifoldMetricHandler:
 
     def calculate_frechet_variance(self, samples):
         """
-        Calculate Frechet variance using Frechet mean
+        D_r: Calculate Frechet variance using Frechet mean (geodesic)
         """
         mu = self.frechet_mean(samples)
         mu_expanded = mu.expand_as(samples)
 
-        # ADDED: scaled distance here for cross-curvature comparison.
-        # The intrinsic point 'mu' is mathematically valid regardless of logmap scaling.
         if self.cross_curvature:
             return self.elementwise_scaled_dist(samples, mu_expanded).pow(2).mean()
+        elif self.m_type == "euclidean":
+            return torch.linalg.norm(samples - mu_expanded, dim=-1).pow(2).mean()
         else:
             return self.manifold.dist(samples, mu_expanded).pow(2).mean()
         
@@ -483,9 +504,22 @@ class ManifoldMetricHandler:
         #return self.scaled_dist(samples, mu_expanded).pow(2).mean() #normalizing for better cross-curvature comparison  
 
 
+    def calculate_tangent_frechet_variance(self, samples):
+        """
+        D_e: variance of samples around their mean in tangent-space
+        coordinates (tangent_coordinates_scaled), the Euclidean counterpart
+        to calculate_frechet_variance. Since the tangent space is flat, the
+        mean there is just the arithmetic mean -- no iterative Frechet-mean
+        search is needed, unlike the manifold case in frechet_mean().
+        """
+        v = self.tangent_coordinates_scaled(samples)
+        mu = v.mean(dim=0, keepdim=True)
+        return (v - mu).pow(2).sum(dim=-1).mean()
+
+
     def calculate_dispersion(self, samples):
         """
-        Pairwise dispersion calculation: simpler version of Frechet variance
+        D_r: pairwise dispersion calculation (geodesic), simpler version of Frechet variance
         """
         d = self.pairwise_dist(samples, samples)
         n = samples.shape[0]
@@ -493,12 +527,35 @@ class ManifoldMetricHandler:
         return d[mask].mean()
 
 
+    def calculate_tangent_dispersion(self, samples):
+        """
+        D_e: pairwise dispersion in tangent-space coordinates (same projection
+        used by calculate_tangent_sinkhorn / calculate_tangent_mmd), the
+        Euclidean counterpart to calculate_dispersion.
+        """
+        v = self.tangent_coordinates_scaled(samples)
+        d = torch.cdist(v, v, p=2)
+        n = v.shape[0]
+        mask = ~torch.eye(n, dtype=torch.bool, device=v.device)
+        return d[mask].mean()
+
+
     def calculate_dispersion_ratio(self, x_pred, x_target):
         """
-        Diversity: Calculate dispersion ratio of predicted with target dispersion
+        Diversity: Calculate dispersion ratio of predicted with target dispersion (D_r)
         """
         gen_disp = self.calculate_dispersion(x_pred)
         real_disp = self.calculate_dispersion(x_target)
+        return gen_disp / torch.clamp(real_disp, min=1e-8)
+
+
+    def calculate_tangent_dispersion_ratio(self, x_pred, x_target):
+        """
+        Diversity: same as calculate_dispersion_ratio but using tangent-space
+        (D_e) dispersion instead of geodesic (D_r) dispersion.
+        """
+        gen_disp = self.calculate_tangent_dispersion(x_pred)
+        real_disp = self.calculate_tangent_dispersion(x_target)
         return gen_disp / torch.clamp(real_disp, min=1e-8)
 
 
@@ -810,12 +867,23 @@ class ManifoldMetricHandler:
                     pred, target, return_eps = True
                 )
                 results["val_sample/epsilon_precision"] = precision
+                results["val_sample/epsilon_precision_eps"] = eps_prec
+
+            if self.metrics_used.get("tangent_epsilon_coverage", False):
+                tangent_coverage, tangent_eps_cov = self.calculate_tangent_epsilon_coverage(
+                    pred, target, return_eps = True
+                )
+                results["val_sample/tangent_epsilon_coverage"] = tangent_coverage
+                results["val_sample/tangent_epsilon_coverage_eps"] = tangent_eps_cov
+
+            if self.metrics_used.get("tangent_epsilon_precision", False):
+                tangent_precision, tangent_eps_prec = self.calculate_tangent_epsilon_precision(
+                    pred, target, return_eps = True
+                )
+                results["val_sample/tangent_epsilon_precision"] = tangent_precision
+                results["val_sample/tangent_epsilon_precision_eps"] = tangent_eps_prec
 
             if self.metrics_used.get("snr", False):
-                # bootstrap-based SNR = mean/std, comparing D_r vs D_e noise levels
-                # (this is evaluation-batch noise; combine with cross-seed
-                # mean/std computed downstream from multiple training runs
-                # for the full training+evaluation noise picture)
                 n_boot = self.metrics_params.get("snr_n_boot", 30)
                 frac = self.metrics_params.get("snr_frac", 0.8)
 
@@ -866,7 +934,6 @@ class ManifoldMetricHandler:
                     results["val_sample/snr_ratio_mmd_r_over_e"] = (
                         snr_mmd_r["snr"] / torch.clamp(snr_mmd_e["snr"], min = 1e-8)
                     )
-                results["val_sample/epsilon_precision_eps"] = eps_prec
 
             if self.metrics_used.get("frechet_variance", False):
                 frechet_pred = self.calculate_frechet_variance(pred)
@@ -878,6 +945,16 @@ class ManifoldMetricHandler:
                     frechet_pred / torch.clamp(frechet_target, min=1e-8)
                 )
 
+            if self.metrics_used.get("tangent_frechet_variance", False):
+                tangent_frechet_pred = self.calculate_tangent_frechet_variance(pred)
+                tangent_frechet_target = self.calculate_tangent_frechet_variance(target)
+
+                results["val_sample/tangent_frechet_variance_pred"] = tangent_frechet_pred
+                results["val_sample/tangent_frechet_variance_target"] = tangent_frechet_target
+                results["val_sample/tangent_frechet_variance_ratio"] = (
+                    tangent_frechet_pred / torch.clamp(tangent_frechet_target, min=1e-8)
+                )
+
             if self.metrics_used.get("dispersion", False):
                 disp_pred = self.calculate_dispersion(pred)
                 disp_target = self.calculate_dispersion(target)
@@ -886,6 +963,16 @@ class ManifoldMetricHandler:
                 results["val_sample/dispersion_target"] = disp_target
                 results["val_sample/dispersion_ratio"] = disp_pred / torch.clamp(
                     disp_target, min = 1e-8
+                )
+
+            if self.metrics_used.get("tangent_dispersion", False):
+                tangent_disp_pred = self.calculate_tangent_dispersion(pred)
+                tangent_disp_target = self.calculate_tangent_dispersion(target)
+
+                results["val_sample/tangent_dispersion_predicted"] = tangent_disp_pred
+                results["val_sample/tangent_dispersion_target"] = tangent_disp_target
+                results["val_sample/tangent_dispersion_ratio"] = tangent_disp_pred / torch.clamp(
+                    tangent_disp_target, min = 1e-8
                 )
 
             if self.metrics_used.get("volume_scaling", False):

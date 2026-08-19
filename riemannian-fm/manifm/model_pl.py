@@ -820,8 +820,6 @@ class ManifoldFMLitModule(pl.LightningModule):
                 logp1 = logp0 + logdetjac
 
                 if self.cfg.get("normalize_loglik", False):
-                    # bits-per-dimension convention: -log_2 p(x) / d = -log p(x) / (d * log 2)
-                    # (previously divided by self.dim only, which gives nats/dim, not bits/dim)
                     logp1 = logp1 / (self.dim * math.log(2))
 
                 # Mask out those that left the manifold
