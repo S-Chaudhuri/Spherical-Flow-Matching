@@ -820,7 +820,7 @@ class ManifoldFMLitModule(pl.LightningModule):
                 logp1 = logp0 + logdetjac
 
                 if self.cfg.get("normalize_loglik", False):
-                    logp1 = logp1 / self.dim
+                    logp1 = logp1 / (self.dim * math.log(2))
 
                 # Mask out those that left the manifold
                 masked_logp1 = logp1
