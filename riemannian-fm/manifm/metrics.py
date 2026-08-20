@@ -40,7 +40,7 @@ class ManifoldMetricHandler:
                 "snr": True,
             },
         )
-        self.metrics_params = cfg.get("metrics_param", {}) or {} # parameters for metrics, e.g. blur for Sinkhorn-Knopp
+        self.metrics_params = cfg.get("metrics_params", cfg.get("metrics_param", {})) or {} # parameters for metrics, e.g. blur for Sinkhorn-Knopp; accepts either key name so a metrics_params typo doesn't silently fall back to all defaults
         self.cross_curvature = cfg.get("cross_curvature", False) # whether to normalize metrics for better cross-curvature comparison
 
         self.m_type = gcfg.get("manifold", "euclidean").lower()
@@ -104,11 +104,18 @@ class ManifoldMetricHandler:
 
 
     def tangent_coordinates_scaled(self, x):
-        """ scale the tangent coordinates by sqrt(|kappa|)
-        only for tangent-space Sinkhorn cross-curvature comparison """
+        """ Log-map samples to the tangent space at the fixed origin. If
+        enabled, scale tangent coordinates by sqrt(|kappa|), i.e. measure
+        them in curvature-radius units. Used by ALL tangent-space (D_e)
+        metrics: tangent Sinkhorn, tangent MMD, tangent epsilon coverage/
+        precision, tangent Frechet variance, tangent dispersion -- not just
+        Sinkhorn, despite the legacy flag name below. """
         v = self.tangent_coordinates(x)
 
-        normalize = self.metrics_params.get("normalize_tangent_sinkhorn", True)
+        normalize = self.metrics_params.get(
+            "normalize_tangent_metrics",
+            self.metrics_params.get("normalize_tangent_sinkhorn", True),
+        )
         if normalize and self.kappa != 0:
             v = v * torch.sqrt(
                 torch.as_tensor(abs(self.kappa), device=v.device, dtype=v.dtype)
@@ -186,7 +193,7 @@ class ManifoldMetricHandler:
         self,
         x_gen,
         x_real,
-        p = 1,
+        p = 1,  # p = 1 gives Earth Mover's Distance (Wasserstein exponent)
         blur = None,
     ):
         """
@@ -203,12 +210,6 @@ class ManifoldMetricHandler:
         
         if blur is None:
             blur = self.metrics_params.get("sinkhorn_blur", 0.05)
-
-        # REMOVED: blur = blur * (abs(self.kappa) ** 0.5) 
-        # The geodesic_cost already scales the distance, meaning the cost matrix is invariant. 
-        # Scaling blur would result in curvature-dependent entropic regularization.
-        # if self.cross_curvature and self.kappa != 0: #normalizing for better cross-curvature comparison
-        #     blur = blur * (abs(self.kappa) ** 0.5)
             
         if self.m_type == "euclidean":  # debias = True, i.e. use Sinkhorn divergence
             solver = SamplesLoss(
@@ -227,12 +228,12 @@ class ManifoldMetricHandler:
                     # do an explicit pairwise comparison
                     x_exp = x.unsqueeze(1)  # (N, 1, D)
                     y_exp = y.unsqueeze(0)  # (1, M, D)
-                    
-                    # if self.cross_curvature:
-                    #    d = self.scaled_dist(x_exp, y_exp) #normalizing for better cross-curvature comparison
-                    #    return d ** p
-                    # else:
-                    return self.manifold.dist(x_exp, y_exp) ** p
+
+                    if self.cross_curvature:
+                        d = self.scaled_dist(x_exp, y_exp)  # normalizing for better cross-curvature comparison
+                        return d ** p
+                    else:
+                        return self.manifold.dist(x_exp, y_exp) ** p
 
                 except:
                     n = x.shape[0]
@@ -243,7 +244,10 @@ class ManifoldMetricHandler:
                     
                     for i in range(0, n, chunk_size):
                         x_chunk = x[i : i + chunk_size].unsqueeze(1)
-                        cost_matrix[i : i + chunk_size] = self.manifold.dist(x_chunk, y_exp) ** p
+                        if self.cross_curvature:
+                            cost_matrix[i : i + chunk_size] = self.scaled_dist(x_chunk, y_exp) ** p
+                        else:
+                            cost_matrix[i : i + chunk_size] = self.manifold.dist(x_chunk, y_exp) ** p
                         
                     return cost_matrix
 
@@ -298,25 +302,32 @@ class ManifoldMetricHandler:
 
 
     def _mmd_from_distances(self, dxx, dyy, dxy, sigma=None):
-        """ shared RBF-kernel MMD computation given precomputed pairwise
+        """ shared RBF-kernel MMD^2 computation given precomputed pairwise
         distance matrices; used by both the geodesic (D_r) and
-        tangent-space (D_e) MMD variants below """
+        tangent-space (D_e) MMD variants below. Returns the biased
+        empirical MMD^2 statistic (squared MMD), not MMD itself. """
         if sigma is None:
             vals = dxy.detach().flatten()
             vals = vals[vals > 0]
-            sigma = torch.median(vals)
-            sigma = torch.clamp(sigma, min=1e-6)
+            if vals.numel() == 0:
+                sigma = torch.as_tensor(1.0, device=dxy.device, dtype=dxy.dtype)
+            else:
+                sigma = torch.median(vals)
+                sigma = torch.clamp(sigma, min=1e-6)
 
         kxx = torch.exp(-(dxx**2) / (2 * sigma**2))
         kyy = torch.exp(-(dyy**2) / (2 * sigma**2))
         kxy = torch.exp(-(dxy**2) / (2 * sigma**2))
 
-        return kxx.mean() + kyy.mean() - 2 * kxy.mean()
+        mmd2 = kxx.mean() + kyy.mean() - 2 * kxy.mean()
+
+        return torch.clamp(mmd2, min=0.0)
 
 
     def calculate_mmd(self, x_gen, x_real, sigma=None):
         """
-        D_r: MMD with geodesic RBF kernel (pairwise geodesic distances)
+        D_r: MMD^2 (squared MMD, biased empirical estimator) with geodesic
+        RBF kernel (pairwise geodesic distances). Logged as val_sample/mmd2.
         """
         dxx = self.pairwise_dist(x_gen, x_gen)
         dyy = self.pairwise_dist(x_real, x_real)
@@ -327,9 +338,11 @@ class ManifoldMetricHandler:
 
     def calculate_tangent_mmd(self, x_gen, x_real, sigma=None):
         """
-        D_e: MMD with Euclidean RBF kernel, computed after projecting both
-        distributions to the tangent space at the fixed origin via the
-        logarithmic map (same projection used by calculate_tangent_sinkhorn).
+        D_e: MMD^2 (squared MMD, biased empirical estimator) with Euclidean
+        RBF kernel, computed after projecting both distributions to the
+        tangent space at the fixed origin via the logarithmic map (same
+        projection used by calculate_tangent_sinkhorn). Logged as
+        val_sample/tangent_mmd2.
         """
         v_gen = self.tangent_coordinates_scaled(x_gen)
         v_real = self.tangent_coordinates_scaled(x_real)
@@ -634,12 +647,6 @@ class ManifoldMetricHandler:
         else:
             loss = self.manifold.inner(x_t, diff, diff).mean()
 
-            # ADDED: curvature normalisation.
-            # Vector fields scale with R. Squared error scales with R^2.
-            # Multiply by |K| (which is 1/R^2) to normalize.
-            # if self.cross_curvature and self.kappa != 0:
-            #     loss = loss * abs(self.kappa)
-
         n_pred = self._norm(v_pred, x_t).unsqueeze(-1)
         n_target = self._norm(v_target, x_t).unsqueeze(-1)
 
@@ -659,8 +666,9 @@ class ManifoldMetricHandler:
         self, x: ManifoldTensor, mu: ManifoldTensor, p: torch.Tensor, eps: float = 1e-8
     ) -> float:
         """
-        Compute the Kullback-Leibler divergence between the proportion of samples
-        mapped to each Gaussian and the true distribution.
+        Compute D_KL(p_transported || p_true), where p_transported is the
+        empirical fraction of samples in x assigned to their nearest of the
+        k mixture centres in mu, and p_true is the (fixed) mixture weights.
 
         Args:
             x: coordinates of the transported samples on the manifold (N x d).
@@ -671,16 +679,10 @@ class ManifoldMetricHandler:
         Returns:
             kld: the KL-Divergence.
         """
+        p = p.to(device=x.device, dtype=x.dtype)
+        p = p / torch.clamp(p.sum(), min=eps)
 
-        # expand dimensions for broadcasting
-        x_exp = x.unsqueeze(1)  # Shape: (N, 1, d)
-        mu_exp = mu.unsqueeze(0)  # Shape: (1, k, d)
-
-        # compute the true pairwise hyperbolic distances directly
-        if self.cross_curvature:
-            distances = self.scaled_dist(x_exp, mu_exp) #normalizing for better cross-curvature comparison
-        else:
-            distances = self.manifold.dist(x_exp, mu_exp)  # Shape: (N, k)
+        distances = self.pairwise_dist(x, mu)  # Shape: (N, k)
 
         # find the index of the closest mu for each x
         nearest_gaussian = torch.argmin(distances, dim=1)
@@ -688,15 +690,18 @@ class ManifoldMetricHandler:
         # compute proportions
         transported_p = torch.zeros_like(p)
         idx, counts = nearest_gaussian.unique(return_counts=True)
-        transported_p[idx] = counts / counts.sum().float()
+        transported_p[idx] = counts.to(dtype=x.dtype) / counts.sum().to(dtype=x.dtype)
 
-        transported_p += eps
+        transported_p = transported_p + eps
         transported_p = transported_p / transported_p.sum()
 
-        # compute KL divergence
+        p_stable = p + eps
+        p_stable = p_stable / p_stable.sum()
+
+        # compute KL divergence: D_KL(p_transported || p_true)
         kld = torch.nn.functional.kl_div(
-            input=torch.log(transported_p),
-            target=p,
+            input=torch.log(p_stable),
+            target=transported_p,
             reduction="sum",
         )
 
@@ -739,7 +744,9 @@ class ManifoldMetricHandler:
             ratio = torch.sin(rho_safe) / rho_safe
                                         # exact limit at rho = 0
             ratio = torch.where(rho < 1e-6, torch.ones_like(ratio), ratio)
-                                        # just for numerical safety near the antipode
+            pi = torch.as_tensor(torch.pi, device=rho.device, dtype=rho.dtype)
+            beyond_cut = rho > pi
+            ratio = torch.where(beyond_cut, torch.full_like(ratio, float("nan")), ratio)
             ratio = torch.clamp(ratio, min = 0.0)
         else:                           # --> hyperbolic
             ratio = torch.sinh(rho_safe) / rho_safe
@@ -763,6 +770,28 @@ class ManifoldMetricHandler:
         return ratio.pow(exponent)
 
 
+    def log_volume_scaling_values(self, x, eps = 1e-12):
+        """
+        log J_kappa(r) = (d-1) * log(S_kappa(r) / r).
+        BUGFIX-MOTIVATED ADDITION: on the hyperbolic manifold, sinh(rho)
+        grows unboundedly as points approach the Poincare ball boundary
+        (unlike the sphere, geodesic distance here has no upper bound), so
+        ratio.pow(exponent) in volume_scaling_values can genuinely overflow
+        to +inf at moderate dimension/curvature -- confirmed empirically:
+        e.g. dim=8, curvature=5, points at 0.95x the ball radius already
+        overflow to inf in float32. Working in log-space avoids this.
+        """
+        d_intrinsic = self.intrinsic_dim()
+        exponent = d_intrinsic - 1
+
+        if exponent == 0:
+            return torch.zeros(x.shape[0], device = x.device, dtype = x.dtype)
+
+        r = self.radial_geodesic_distance(x)
+        ratio = self.radial_jacobian_ratio(r)
+        return exponent * torch.log(torch.clamp(ratio, min = eps))
+
+
     def calculate_volume_scaling_mean(self, samples):
         """ mean (expected) "experienced" volume scaling """
         J = self.volume_scaling_values(samples)
@@ -779,6 +808,27 @@ class ManifoldMetricHandler:
         """ start-target volume-growth gap, for p0 and p1, resp. """
         mean_start = self.calculate_volume_scaling_mean(start_samples)
         mean_target = self.calculate_volume_scaling_mean(target_samples)
+        return mean_target - mean_start
+
+
+    def calculate_log_volume_scaling_mean(self, samples):
+        """ mean of log J_kappa(r); numerically stable counterpart to
+        calculate_volume_scaling_mean, safe from overflow in high dim /
+        strong (hyperbolic) curvature """
+        logJ = self.log_volume_scaling_values(samples)
+        return logJ.mean()
+
+
+    def calculate_log_volume_scaling_variance(self, samples):
+        """ variance of log J_kappa(r) """
+        logJ = self.log_volume_scaling_values(samples)
+        return logJ.var(unbiased = False)
+
+
+    def calculate_log_volume_scaling_gap(self, start_samples, target_samples):
+        """ start-target log-volume-growth gap, for p0 and p1, resp. """
+        mean_start = self.calculate_log_volume_scaling_mean(start_samples)
+        mean_target = self.calculate_log_volume_scaling_mean(target_samples)
         return mean_target - mean_start
     
 
@@ -845,13 +895,13 @@ class ManifoldMetricHandler:
             mmd_val = None
             if self.metrics_used.get("mmd", False):
                 mmd_val = self.calculate_mmd(pred, target)
-                results["val_sample/mmd"] = mmd_val
+                results["val_sample/mmd2"] = mmd_val
 
             if self.metrics_used.get("tangent_mmd", False):
                 tangent_mmd_val = self.calculate_tangent_mmd(pred, target)
-                results["val_sample/tangent_mmd"] = tangent_mmd_val
+                results["val_sample/tangent_mmd2"] = tangent_mmd_val
                 if mmd_val is not None:
-                    results["val_sample/tangent_to_geodesic_mmd_ratio"] = (
+                    results["val_sample/tangent_to_geodesic_mmd2_ratio"] = (
                         tangent_mmd_val / torch.clamp(mmd_val, min = 1e-8)
                     )
 
@@ -917,21 +967,21 @@ class ManifoldMetricHandler:
                         self.calculate_mmd, pred, target,
                         n_boot = n_boot, frac = frac,
                     )
-                    results["val_sample/snr_mmd_r_mean"] = snr_mmd_r["mean"]
-                    results["val_sample/snr_mmd_r_std"] = snr_mmd_r["std"]
-                    results["val_sample/snr_mmd_r"] = snr_mmd_r["snr"]
+                    results["val_sample/snr_mmd2_r_mean"] = snr_mmd_r["mean"]
+                    results["val_sample/snr_mmd2_r_std"] = snr_mmd_r["std"]
+                    results["val_sample/snr_mmd2_r"] = snr_mmd_r["snr"]
 
                 if self.metrics_used.get("tangent_mmd", False):
                     snr_mmd_e = self.calculate_with_snr(
                         self.calculate_tangent_mmd, pred, target,
                         n_boot = n_boot, frac = frac,
                     )
-                    results["val_sample/snr_mmd_e_mean"] = snr_mmd_e["mean"]
-                    results["val_sample/snr_mmd_e_std"] = snr_mmd_e["std"]
-                    results["val_sample/snr_mmd_e"] = snr_mmd_e["snr"]
+                    results["val_sample/snr_mmd2_e_mean"] = snr_mmd_e["mean"]
+                    results["val_sample/snr_mmd2_e_std"] = snr_mmd_e["std"]
+                    results["val_sample/snr_mmd2_e"] = snr_mmd_e["snr"]
 
                 if snr_mmd_r is not None and snr_mmd_e is not None:
-                    results["val_sample/snr_ratio_mmd_r_over_e"] = (
+                    results["val_sample/snr_ratio_mmd2_r_over_e"] = (
                         snr_mmd_r["snr"] / torch.clamp(snr_mmd_e["snr"], min = 1e-8)
                     )
 
@@ -1011,7 +1061,7 @@ class ManifoldMetricHandler:
                         dist_val = self.scaled_dist(pred, target).mean() #normalizing for better cross-curvature comparison
                     else:
                         dist_val = self.manifold.dist(pred, target).mean()
-                results["val_sample/geodesic_dist"] = dist_val
+                results["val_sample/paired_geodesic_dist"] = dist_val
 
             if self.cfg.get("save_densities", False):
                 self.save_density_state(pred, target, step)
