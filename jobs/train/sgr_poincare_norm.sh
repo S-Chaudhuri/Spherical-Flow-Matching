@@ -5,8 +5,8 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=9
 #SBATCH --array=1-270
-#SBATCH --output=output/sgr/poincare/norm_array_%A_%a.out 
-#SBATCH --error=logs/sgr/poincare/norm_array_%A_%a.err  
+#SBATCH --output=/scratch-shared/%u/output/sgr/poincare/norm_array_%A_%a.out 
+#SBATCH --error=/scratch-shared/%u/logs/sgr/poincare/norm_array_%A_%a.err  
 
 set -euo pipefail
 
@@ -27,7 +27,9 @@ export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
 
 # 2. Correctly create nested directories
 mkdir -p "$WANDB_CACHE_DIR"
-mkdir -p logs/sgr/poincare output/sgr/poincare failed_tasks/sgr/poincare
+mkdir -p /scratch-shared/$USER/logs/sgr/poincare 
+mkdir -p /scratch-shared/$USER/output/sgr/poincare 
+mkdir -p /scratch-shared/$USER/failed_tasks/sgr/poincare
 
 TASKS_FILE="tasks/sgr_poincare_norm.txt"
 
@@ -46,8 +48,8 @@ EXIT_CODE=$?
 if [ $EXIT_CODE -ne 0 ]; then
     echo "Task $SLURM_ARRAY_TASK_ID failed with exit code $EXIT_CODE."
     
-    cp "output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/sgr/poincare/
-    cp "logs/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/sgr/poincare/
+    cp "/scratch-shared/$USER/output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" /scratch-shared/$USER/failed_tasks/sgr/poincare/
+    cp "/scratch-shared/$USER/logs/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" /scratch-shared/$USER/failed_tasks/sgr/poincare/
     
     echo "Logs copied to failed_tasks/sgr/poincare/ directory."
 fi

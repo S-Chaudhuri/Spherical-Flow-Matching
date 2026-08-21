@@ -5,11 +5,13 @@
 #SBATCH --gpus=1                   # GPUs per task
 #SBATCH --cpus-per-task=9          # Standard CPU allocation for 1 GPU on Snellius
 #SBATCH --array=1-24               
-#SBATCH --output=output/mog/euclidean/norm_array_%A_%a.out 
-#SBATCH --error=logs/mog/euclidean/norm_array_%A_%a.err  
+#SBATCH --output=/scratch-shared/%u/output/mog/euclidean/norm_array_%A_%a.out 
+#SBATCH --error=/scratch-shared/%u/logs/tch-shared/%u/logs/tch-shared/%u/logs/mog/euclidean/norm_array_%A_%a.err  
 
 # Create necessary directories
-mkdir -p logs/mog/eclidean output/mog/eclidean failed_tasks/mog/eclidean
+mkdir -p /scratch-shared/$USER/logs/mog/eclidean 
+mkdir -p /scratch-shared/$USER/output/mog/eclidean 
+mkdir -p /scratch-shared/$USER/failed_tasks/mog/eclidean
 
 TASKS_FILE="tasks/mog_euclidean.txt"
 
@@ -29,8 +31,8 @@ if [ $EXIT_CODE -ne 0 ]; then
     echo "Task $SLURM_ARRAY_TASK_ID failed with exit code $EXIT_CODE."
     
     # Copy both standard output and error files to the failed_tasks directory
-    cp "output/mog/eclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/mog/eclidean/
-    cp "logs/mog/eclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/mog/eclidean/
+    cp "/scratch-shared/$USER/output/mog/eclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" /scratch-shared/$USER/failed_tasks/mog/eclidean/
+    cp "/scratch-shared/$USER/logs/mog/eclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" /scratch-shared/$USER/failed_tasks/mog/eclidean/
     
     echo "Logs copied to failed_tasks/mog/eclidean/ directory."
 fi

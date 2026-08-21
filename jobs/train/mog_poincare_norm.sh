@@ -5,11 +5,13 @@
 #SBATCH --gpus=1                   # GPUs per task
 #SBATCH --cpus-per-task=9          # Standard CPU allocation for 1 GPU on Snellius
 #SBATCH --array=1-120               
-#SBATCH --output=output/mog/poincare/norm_array_%A_%a.out 
-#SBATCH --error=logs/mog/poincare/norm_array_%A_%a.err  
+#SBATCH --output=/scratch-shared/%u/output/mog/poincare/norm_array_%A_%a.out 
+#SBATCH --error=/scratch-shared/%u/logs/tch-shared/%u/logs/mog/poincare/norm_array_%A_%a.err  
 
 # Create necessary directories
-mkdir -p logs/mog/poincare output/mog/poincare failed_tasks/mog/poincare
+mkdir -p /scratch-shared/$USER/logs/mog/poincare 
+mkdir -p /scratch-shared/$USER/output/mog/poincare 
+mkdir -p /scratch-shared/$USER/failed_tasks/mog/poincare
 
 TASKS_FILE="tasks/mog_poincare_norm.txt"
 
@@ -29,8 +31,8 @@ if [ $EXIT_CODE -ne 0 ]; then
     echo "Task $SLURM_ARRAY_TASK_ID failed with exit code $EXIT_CODE."
     
     # Copy both standard output and error files to the failed_tasks directory
-    cp "output/mog/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/mog/poincare/
-    cp "logs/mog/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/mog/poincare/
+    cp "/scratch-shared/$USER/output/mog/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" /scratch-shared/$USER/failed_tasks/mog/poincare/
+    cp "/scratch-shared/$USER/logs/mog/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" /scratch-shared/$USER/failed_tasks/mog/poincare/
     
     echo "Logs copied to failed_tasks/mog/poincare/ directory."
 fi

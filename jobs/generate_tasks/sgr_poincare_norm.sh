@@ -20,7 +20,7 @@ for seed in "${seeds[@]}"; do
         radius_tag=$(echo "${radius}" | sed 's/\./p/g')
 
         echo "srun python train.py experiment=general_fm seed=${seed} \
-hydra.run.dir=outputs/runs/sgr/poincare/norm/poi_d${dim}_c${curv_tag}_r${radius_tag}_s${seed}_norm \
+hydra.run.dir=/scratch-shared/$USER/outputs/runs/sgr/poincare/norm/poi_d${dim}_c${curv_tag}_r${radius_tag}_s${seed}_norm \
 general.manifold=poincare \
 general.dim=${dim} \
 general.curvature=${curv}.0 \

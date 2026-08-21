@@ -21,7 +21,7 @@ for seed in "${seeds[@]}"; do
 
         # No Python calculation needed! train.py handles gaussian-ring origin mapping natively.
         echo "srun python train.py experiment=general_fm seed=${seed} \
-hydra.run.dir=outputs/runs/sgr/euclidean/norm/euc_d${dim}_c${curv_tag}_r${radius_tag}_s${seed}_norm \
+hydra.run.dir=/scratch-shared/$USER/outputs/runs/sgr/euclidean/norm/euc_d${dim}_c${curv_tag}_r${radius_tag}_s${seed}_norm \
 general.manifold=euclidean \
 general.dim=${dim} \
 general.curvature=${curv}.0 \

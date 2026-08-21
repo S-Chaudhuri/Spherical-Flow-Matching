@@ -68,7 +68,7 @@ EOF
 )
           curv_tag=$(echo $curv | sed 's/\./p/g')
 
-          echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=outputs/runs/mog/poincare_norm/general/poi_d${dim}_c${curv_tag}_n${n}_${balance}_s${seed} general.manifold=poincare general.dim=${dim} general.curvature=${curv}.0 general.x1_dist=mog general.std_x0=${std_x0} general.std_x1=${stds} general.weights=${weights} general.mean_x1=${means} general.normalize_tangent_distributions=True" >> "$output_file"
+          echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/mog/poincare_norm/general/poi_d${dim}_c${curv_tag}_n${n}_${balance}_s${seed} general.manifold=poincare general.dim=${dim} general.curvature=${curv}.0 general.x1_dist=mog general.std_x0=${std_x0} general.std_x1=${stds} general.weights=${weights} general.mean_x1=${means} general.normalize_tangent_distributions=True" >> "$output_file"
 
         done
       done
