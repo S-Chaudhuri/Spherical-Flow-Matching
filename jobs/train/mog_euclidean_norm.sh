@@ -32,7 +32,7 @@ if [ $EXIT_CODE -ne 0 ]; then
     cp "output/mog/eclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/mog/eclidean/
     cp "logs/mog/eclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/mog/eclidean/
     
-    echo "Logs copied to failed_tasks/ directory."
+    echo "Logs copied to failed_tasks/mog/eclidean/ directory."
 fi
 
 exit $EXIT_CODE

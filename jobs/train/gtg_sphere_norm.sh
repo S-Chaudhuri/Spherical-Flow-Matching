@@ -32,7 +32,7 @@ if [ $EXIT_CODE -ne 0 ]; then
     cp "output/gtg/sphere/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/gtg/sphere/
     cp "logs/gtg/sphere/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/gtg/sphere/
 
-    echo "Logs copied to failed_tasks/ directory."
+    echo "Logs copied to failed_tasks/gtg/sphere/ directory."
 fi
 
 exit $EXIT_CODE
