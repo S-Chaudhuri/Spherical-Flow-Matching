@@ -28,14 +28,21 @@ checkerboard:
 metrics_used:
   sinkhorn_knopp: True
   tangent_sinkhorn_knopp: True
-  mmd: False
+  mmd: True
+  tangent_mmd: True
   epsilon_coverage: True
+  tangent_epsilon_coverage: True
   epsilon_precision: True
+  tangent_epsilon_precision: True
   frechet_variance: True
+  tangent_frechet_variance: True
   dispersion: True
+  tangent_dispersion: True
+  radial: True
   stability: True
   rfm: True
   volume_scaling: True
+  snr: True
 
 metrics_param:
   sinkhorn_blur: 0.05
@@ -43,7 +50,7 @@ metrics_param:
   normalize_tangent_metrics: true       # applies to ALL tangent-space (D_e) metrics, not just Sinkhorn -- see tangent_coordinates_scaled()
   normalize_tangent_sinkhorn: true      # legacy key name, kept as fallback if normalize_tangent_metrics is absent
 
-save_densities: False
+save_densities: True
 
 model:
   d_model: 1024

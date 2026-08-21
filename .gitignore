@@ -27,3 +27,4 @@ scaling_plot_dotted.pdf
 scaling_plot_log.pdf
 
 *.yaml
+output/
