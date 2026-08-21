@@ -1,17 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=gtg_euc
-#SBATCH --time=04:00:00            # Adjust as needed
-#SBATCH --partition=gpu            # Standard Snellius GPU partition
+#SBATCH --time=08:00:00            # Adjust as needed
+#SBATCH --partition=gpu_h100       # Standard Snellius GPU partition
 #SBATCH --gpus=1                   # GPUs per task
 #SBATCH --cpus-per-task=9          # Standard CPU allocation for 1 GPU on Snellius
 #SBATCH --array=1-24               
-#SBATCH --output=output/gtg/euclidean/array_%A_%a.out 
-#SBATCH --error=logs/gtg/euclidean/array_%A_%a.err  
+#SBATCH --output=output/gtg/euclidean/norm_array_%A_%a.out 
+#SBATCH --error=logs/gtg/euclidean/norm_array_%A_%a.err  
 
 # Create necessary directories
-mkdir -p logs gtg eclidean failed_tasks
+mkdir -p logs/gtg/eclidean output/gtg/euclidean failed_tasks/gtg/euclidean
 
-TASKS_FILE="tasks/gtg_euclidean.txt"
+TASKS_FILE="tasks/gtg_euclidean_norm.txt"
 
 # Extract the command corresponding to the current task ID
 COMMAND=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASKS_FILE")
@@ -29,10 +29,10 @@ if [ $EXIT_CODE -ne 0 ]; then
     echo "Task $SLURM_ARRAY_TASK_ID failed with exit code $EXIT_CODE."
     
     # Copy both standard output and error files to the failed_tasks directory
-    cp "logs/array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/
-    cp "logs/array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/
+    cp "output/sgr/euclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" failed_tasks/gtg/euclidean/
+    cp "logs/sgr/euclidean/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" failed_tasks/gtg/euclidean/
     
-    echo "Logs copied to failed_tasks/ directory."
+    echo "Logs copied to failed_tasks/gtg/euclidean/ directory."
 fi
 
 exit $EXIT_CODE
