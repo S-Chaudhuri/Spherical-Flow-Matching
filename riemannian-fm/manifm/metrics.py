@@ -23,16 +23,28 @@ class ManifoldMetricHandler:
             {
                 "sinkhorn_knopp": True,
                 "tangent_sinkhorn_knopp": True,
+                "ambient_sinkhorn_knopp": True,
+                # ---
                 "mmd": True,
                 "tangent_mmd": True,
+                "ambient_mmd": True,
+                # ---
                 "epsilon_coverage": True,
-                "epsilon_precision": True,
                 "tangent_epsilon_coverage": True,
+                "ambient_epsilon_coverage": True,
+                # ---
+                "epsilon_precision": True,
                 "tangent_epsilon_precision": True,
+                "ambient_epsilon_precision": True,
+                # ---
                 "frechet_variance": True,
                 "tangent_frechet_variance": True,
+                "ambient_frechet_variance": True,
+                # ---
                 "dispersion": True,
                 "tangent_dispersion": True,
+                "ambient_dispersion": True,
+                # ---
                 "radial": True,
                 "stability": True,
                 "rfm": True,
@@ -150,6 +162,34 @@ class ManifoldMetricHandler:
         return val
     
 
+    def calculate_ambient_sinkhorn(
+        self,
+        x_gen,
+        x_real,
+        p = 1,
+        blur = None,
+    ):
+        """ Ambient-Euclidean Sinkhorn divergence: straight-line L2
+        cost computed directly on the raw ambient coordinates.
+        Unlike calculate_tangent_sinkhorn (a curvature-informed local
+        linearization at a fixed origin), this is curvature-independent by
+        construction and works for points that are off-manifold (e.g. FM
+        samples near but not on M). """
+        if blur is None:
+            blur = self.metrics_params.get("sinkhorn_blur", 0.05)
+
+        solver = SamplesLoss(
+            loss = "sinkhorn",
+            p = p,
+            blur = blur,
+            debias = True,
+            backend = "tensorized",
+        )
+        val = solver(x_gen, x_real)
+        val = torch.clamp(val, min = 0.0) ** (1.0 / p)
+        return val
+
+
     def calculate_with_snr(self, metric_fn, x_gen, x_real, n_boot=30, frac=0.8, **kwargs):
         """
         Estimate mean, std and signal-to-noise ratio (SNR = mean/std) of a
@@ -210,6 +250,12 @@ class ManifoldMetricHandler:
         
         if blur is None:
             blur = self.metrics_params.get("sinkhorn_blur", 0.05)
+
+        # REMOVED: blur = blur * (abs(self.kappa) ** 0.5) 
+        # The geodesic_cost already scales the distance, meaning the cost matrix is invariant. 
+        # Scaling blur would result in curvature-dependent entropic regularization.
+        # if self.cross_curvature and self.kappa != 0: #normalizing for better cross-curvature comparison
+        #     blur = blur * (abs(self.kappa) ** 0.5)
             
         if self.m_type == "euclidean":  # debias = True, i.e. use Sinkhorn divergence
             solver = SamplesLoss(
@@ -311,6 +357,7 @@ class ManifoldMetricHandler:
             vals = vals[vals > 0]
             if vals.numel() == 0:
                 sigma = torch.as_tensor(1.0, device=dxy.device, dtype=dxy.dtype)
+            
             else:
                 sigma = torch.median(vals)
                 sigma = torch.clamp(sigma, min=1e-6)
@@ -320,7 +367,8 @@ class ManifoldMetricHandler:
         kxy = torch.exp(-(dxy**2) / (2 * sigma**2))
 
         mmd2 = kxx.mean() + kyy.mean() - 2 * kxy.mean()
-
+        # the true population MMD^2 is >= 0; the biased empirical estimator
+        # can dip slightly negative from finite-sample noise, so clamp
         return torch.clamp(mmd2, min=0.0)
 
 
@@ -350,6 +398,19 @@ class ManifoldMetricHandler:
         dxx = torch.cdist(v_gen, v_gen, p=2)
         dyy = torch.cdist(v_real, v_real, p=2)
         dxy = torch.cdist(v_gen, v_real, p=2)
+
+        return self._mmd_from_distances(dxx, dyy, dxy, sigma)
+
+
+    def calculate_ambient_mmd(self, x_gen, x_real, sigma=None):
+        """
+        Ambient-Euclidean MMD^2: RBF kernel on raw ambient L2
+        distances, no log-map/tangent projection, no kappa dependence.
+        Logged as val_sample/ambient_mmd2.
+        """
+        dxx = torch.cdist(x_gen, x_gen, p=2)
+        dyy = torch.cdist(x_real, x_real, p=2)
+        dxy = torch.cdist(x_gen, x_real, p=2)
 
         return self._mmd_from_distances(dxx, dyy, dxy, sigma)
 
@@ -459,6 +520,40 @@ class ManifoldMetricHandler:
         return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
 
 
+    def calculate_ambient_epsilon_coverage(
+        self,
+        x_gen,
+        x_real,
+        eps=None,
+        eps_multiplier=None,
+        return_eps=False,
+    ):
+        """
+        Ambient-Euclidean counterpart to calculate_epsilon_coverage:
+        raw ambient L2 distances, no log-map/tangent projection, no kappa
+        dependence. Also valid for off-manifold points (e.g. FM samples).
+        """
+        d_cross = torch.cdist(x_real, x_gen, p=2)
+        d_self_ref = torch.cdist(x_real, x_real, p=2)
+        return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
+
+
+    def calculate_ambient_epsilon_precision(
+        self,
+        x_gen,
+        x_real,
+        eps=None,
+        eps_multiplier=None,
+        return_eps=False,
+    ):
+        """
+        Ambient-Euclidean counterpart to calculate_epsilon_precision.
+        """
+        d_cross = torch.cdist(x_gen, x_real, p=2)
+        d_self_ref = torch.cdist(x_real, x_real, p=2)
+        return self._epsilon_ball_stat(d_cross, d_self_ref, eps, eps_multiplier, return_eps)
+
+
     def _norm(self, v, x):
         """
         Computes tangent-vector norms using the Riemannian metric
@@ -505,10 +600,14 @@ class ManifoldMetricHandler:
         mu = self.frechet_mean(samples)
         mu_expanded = mu.expand_as(samples)
 
+        # ADDED: scaled distance here for cross-curvature comparison.
+        # The intrinsic point 'mu' is mathematically valid regardless of logmap scaling.
         if self.cross_curvature:
             return self.elementwise_scaled_dist(samples, mu_expanded).pow(2).mean()
+
         elif self.m_type == "euclidean":
             return torch.linalg.norm(samples - mu_expanded, dim=-1).pow(2).mean()
+            
         else:
             return self.manifold.dist(samples, mu_expanded).pow(2).mean()
         
@@ -528,6 +627,16 @@ class ManifoldMetricHandler:
         v = self.tangent_coordinates_scaled(samples)
         mu = v.mean(dim=0, keepdim=True)
         return (v - mu).pow(2).sum(dim=-1).mean()
+
+
+    def calculate_ambient_frechet_variance(self, samples):
+        """
+        Ambient-Euclidean counterpart: variance of samples around
+        their arithmetic mean in raw ambient coordinates -- no log-map, no
+        kappa dependence. Valid even for off-manifold points.
+        """
+        mu = samples.mean(dim=0, keepdim=True)
+        return (samples - mu).pow(2).sum(dim=-1).mean()
 
 
     def calculate_dispersion(self, samples):
@@ -553,6 +662,17 @@ class ManifoldMetricHandler:
         return d[mask].mean()
 
 
+    def calculate_ambient_dispersion(self, samples):
+        """
+        Ambient-Euclidean counterpart to calculate_dispersion: raw
+        ambient L2 pairwise distance, no log-map, no kappa dependence.
+        """
+        d = torch.cdist(samples, samples, p=2)
+        n = samples.shape[0]
+        mask = ~torch.eye(n, dtype=torch.bool, device=samples.device)
+        return d[mask].mean()
+
+
     def calculate_dispersion_ratio(self, x_pred, x_target):
         """
         Diversity: Calculate dispersion ratio of predicted with target dispersion (D_r)
@@ -569,6 +689,16 @@ class ManifoldMetricHandler:
         """
         gen_disp = self.calculate_tangent_dispersion(x_pred)
         real_disp = self.calculate_tangent_dispersion(x_target)
+        return gen_disp / torch.clamp(real_disp, min=1e-8)
+
+
+    def calculate_ambient_dispersion_ratio(self, x_pred, x_target):
+        """
+        Diversity: same as calculate_dispersion_ratio but using genuine
+        ambient-Euclidean dispersion.
+        """
+        gen_disp = self.calculate_ambient_dispersion(x_pred)
+        real_disp = self.calculate_ambient_dispersion(x_target)
         return gen_disp / torch.clamp(real_disp, min=1e-8)
 
 
@@ -646,6 +776,12 @@ class ManifoldMetricHandler:
             loss = (diff**2).sum(dim=-1).mean()
         else:
             loss = self.manifold.inner(x_t, diff, diff).mean()
+
+            # ADDED: curvature normalisation.
+            # Vector fields scale with R. Squared error scales with R^2.
+            # Multiply by |K| (which is 1/R^2) to normalize.
+            # if self.cross_curvature and self.kappa != 0:
+            #     loss = loss * abs(self.kappa)
 
         n_pred = self._norm(v_pred, x_t).unsqueeze(-1)
         n_target = self._norm(v_target, x_t).unsqueeze(-1)
@@ -744,6 +880,15 @@ class ManifoldMetricHandler:
             ratio = torch.sin(rho_safe) / rho_safe
                                         # exact limit at rho = 0
             ratio = torch.where(rho < 1e-6, torch.ones_like(ratio), ratio)
+                                        # DEFENSIVE: beyond the injectivity radius (rho > pi) the
+                                        # polar-coordinate Jacobian interpretation no longer applies
+                                        # cleanly. In this codebase, radial_geodesic_distance() is
+                                        # always derived from SphereCurvature.dist()'s acos(clamped
+                                        # inner), which already keeps rho strictly below pi -- so this
+                                        # branch should not currently trigger. Kept as a safeguard in
+                                        # case the clamp margin or origin construction ever changes,
+                                        # rather than silently clamping invalid values to 0 like a
+                                        # valid (if degenerate) antipodal ratio would be.
             pi = torch.as_tensor(torch.pi, device=rho.device, dtype=rho.dtype)
             beyond_cut = rho > pi
             ratio = torch.where(beyond_cut, torch.full_like(ratio, float("nan")), ratio)
@@ -773,13 +918,6 @@ class ManifoldMetricHandler:
     def log_volume_scaling_values(self, x, eps = 1e-12):
         """
         log J_kappa(r) = (d-1) * log(S_kappa(r) / r).
-        BUGFIX-MOTIVATED ADDITION: on the hyperbolic manifold, sinh(rho)
-        grows unboundedly as points approach the Poincare ball boundary
-        (unlike the sphere, geodesic distance here has no upper bound), so
-        ratio.pow(exponent) in volume_scaling_values can genuinely overflow
-        to +inf at moderate dimension/curvature -- confirmed empirically:
-        e.g. dim=8, curvature=5, points at 0.95x the ball radius already
-        overflow to inf in float32. Working in log-space avoids this.
         """
         d_intrinsic = self.intrinsic_dim()
         exponent = d_intrinsic - 1
@@ -892,6 +1030,14 @@ class ManifoldMetricHandler:
                         tangent_sinkhorn_val / torch.clamp(sinkhorn_val, min = 1e-8)
                     )
 
+            if self.metrics_used.get("ambient_sinkhorn_knopp", False):
+                ambient_sinkhorn_val = self.calculate_ambient_sinkhorn(pred, target)
+                results["val_sample/ambient_sinkhorn_knopp"] = ambient_sinkhorn_val
+                if self.metrics_used.get("sinkhorn_knopp", False):
+                    results["val_sample/ambient_to_geodesic_sinkhorn_ratio"] = (
+                        ambient_sinkhorn_val / torch.clamp(sinkhorn_val, min = 1e-8)
+                    )
+
             mmd_val = None
             if self.metrics_used.get("mmd", False):
                 mmd_val = self.calculate_mmd(pred, target)
@@ -903,6 +1049,14 @@ class ManifoldMetricHandler:
                 if mmd_val is not None:
                     results["val_sample/tangent_to_geodesic_mmd2_ratio"] = (
                         tangent_mmd_val / torch.clamp(mmd_val, min = 1e-8)
+                    )
+
+            if self.metrics_used.get("ambient_mmd", False):
+                ambient_mmd_val = self.calculate_ambient_mmd(pred, target)
+                results["val_sample/ambient_mmd2"] = ambient_mmd_val
+                if mmd_val is not None:
+                    results["val_sample/ambient_to_geodesic_mmd2_ratio"] = (
+                        ambient_mmd_val / torch.clamp(mmd_val, min = 1e-8)
                     )
 
             if self.metrics_used.get("epsilon_coverage", False):
@@ -933,6 +1087,20 @@ class ManifoldMetricHandler:
                 results["val_sample/tangent_epsilon_precision"] = tangent_precision
                 results["val_sample/tangent_epsilon_precision_eps"] = tangent_eps_prec
 
+            if self.metrics_used.get("ambient_epsilon_coverage", False):
+                ambient_coverage, ambient_eps_cov = self.calculate_ambient_epsilon_coverage(
+                    pred, target, return_eps = True
+                )
+                results["val_sample/ambient_epsilon_coverage"] = ambient_coverage
+                results["val_sample/ambient_epsilon_coverage_eps"] = ambient_eps_cov
+
+            if self.metrics_used.get("ambient_epsilon_precision", False):
+                ambient_precision, ambient_eps_prec = self.calculate_ambient_epsilon_precision(
+                    pred, target, return_eps = True
+                )
+                results["val_sample/ambient_epsilon_precision"] = ambient_precision
+                results["val_sample/ambient_epsilon_precision_eps"] = ambient_eps_prec
+
             if self.metrics_used.get("snr", False):
                 n_boot = self.metrics_params.get("snr_n_boot", 30)
                 frac = self.metrics_params.get("snr_frac", 0.8)
@@ -961,6 +1129,21 @@ class ManifoldMetricHandler:
                         snr_sinkhorn_r["snr"] / torch.clamp(snr_sinkhorn_e["snr"], min = 1e-8)
                     )
 
+                snr_sinkhorn_ambient = None
+                if self.metrics_used.get("ambient_sinkhorn_knopp", False):
+                    snr_sinkhorn_ambient = self.calculate_with_snr(
+                        self.calculate_ambient_sinkhorn, pred, target,
+                        n_boot = n_boot, frac = frac,
+                    )
+                    results["val_sample/snr_sinkhorn_ambient_mean"] = snr_sinkhorn_ambient["mean"]
+                    results["val_sample/snr_sinkhorn_ambient_std"] = snr_sinkhorn_ambient["std"]
+                    results["val_sample/snr_sinkhorn_ambient"] = snr_sinkhorn_ambient["snr"]
+
+                if snr_sinkhorn_r is not None and snr_sinkhorn_ambient is not None:
+                    results["val_sample/snr_ratio_sinkhorn_r_over_ambient"] = (
+                        snr_sinkhorn_r["snr"] / torch.clamp(snr_sinkhorn_ambient["snr"], min = 1e-8)
+                    )
+
                 snr_mmd_r = snr_mmd_e = None
                 if self.metrics_used.get("mmd", False):
                     snr_mmd_r = self.calculate_with_snr(
@@ -985,6 +1168,21 @@ class ManifoldMetricHandler:
                         snr_mmd_r["snr"] / torch.clamp(snr_mmd_e["snr"], min = 1e-8)
                     )
 
+                snr_mmd_ambient = None
+                if self.metrics_used.get("ambient_mmd", False):
+                    snr_mmd_ambient = self.calculate_with_snr(
+                        self.calculate_ambient_mmd, pred, target,
+                        n_boot = n_boot, frac = frac,
+                    )
+                    results["val_sample/snr_mmd2_ambient_mean"] = snr_mmd_ambient["mean"]
+                    results["val_sample/snr_mmd2_ambient_std"] = snr_mmd_ambient["std"]
+                    results["val_sample/snr_mmd2_ambient"] = snr_mmd_ambient["snr"]
+
+                if snr_mmd_r is not None and snr_mmd_ambient is not None:
+                    results["val_sample/snr_ratio_mmd2_r_over_ambient"] = (
+                        snr_mmd_r["snr"] / torch.clamp(snr_mmd_ambient["snr"], min = 1e-8)
+                    )
+
             if self.metrics_used.get("frechet_variance", False):
                 frechet_pred = self.calculate_frechet_variance(pred)
                 frechet_target = self.calculate_frechet_variance(target)
@@ -1005,6 +1203,16 @@ class ManifoldMetricHandler:
                     tangent_frechet_pred / torch.clamp(tangent_frechet_target, min=1e-8)
                 )
 
+            if self.metrics_used.get("ambient_frechet_variance", False):
+                ambient_frechet_pred = self.calculate_ambient_frechet_variance(pred)
+                ambient_frechet_target = self.calculate_ambient_frechet_variance(target)
+
+                results["val_sample/ambient_frechet_variance_pred"] = ambient_frechet_pred
+                results["val_sample/ambient_frechet_variance_target"] = ambient_frechet_target
+                results["val_sample/ambient_frechet_variance_ratio"] = (
+                    ambient_frechet_pred / torch.clamp(ambient_frechet_target, min=1e-8)
+                )
+
             if self.metrics_used.get("dispersion", False):
                 disp_pred = self.calculate_dispersion(pred)
                 disp_target = self.calculate_dispersion(target)
@@ -1023,6 +1231,16 @@ class ManifoldMetricHandler:
                 results["val_sample/tangent_dispersion_target"] = tangent_disp_target
                 results["val_sample/tangent_dispersion_ratio"] = tangent_disp_pred / torch.clamp(
                     tangent_disp_target, min = 1e-8
+                )
+
+            if self.metrics_used.get("ambient_dispersion", False):
+                ambient_disp_pred = self.calculate_ambient_dispersion(pred)
+                ambient_disp_target = self.calculate_ambient_dispersion(target)
+
+                results["val_sample/ambient_dispersion_predicted"] = ambient_disp_pred
+                results["val_sample/ambient_dispersion_target"] = ambient_disp_target
+                results["val_sample/ambient_dispersion_ratio"] = ambient_disp_pred / torch.clamp(
+                    ambient_disp_target, min = 1e-8
                 )
 
             if self.metrics_used.get("volume_scaling", False):
@@ -1054,6 +1272,11 @@ class ManifoldMetricHandler:
                 results["val_sample/finite_fraction"] = self.finite_fraction(pred)
 
             if pred.shape == target.shape:
+                # NOTE: this is a PAIRED, index-matched comparison of
+                # pred[i] vs target[i] -- it is NOT a distributional
+                # distance. It depends entirely on sample ordering/pairing
+                # and is not permutation-invariant, unlike Sinkhorn or MMD.
+                # Do not treat this as a main distributional-quality metric.
                 if self.m_type == "euclidean":
                     dist_val = torch.linalg.norm(pred - target, dim = -1).mean()
                 else:
