@@ -72,7 +72,7 @@ def main(cfg: DictConfig):
         else:
             pass                        # use YAML
 
-    configure_dynamically(cfg)
+    # configure_dynamically(cfg)
 
     print(cfg)
 

@@ -5,8 +5,8 @@
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=9
 #SBATCH --array=1-270
-#SBATCH --output=/scratch-shared/%u/output/sgr/poincare/norm_array_%A_%a.out 
-#SBATCH --error=/scratch-shared/%u/logs/sgr/poincare/norm_array_%A_%a.err  
+#SBATCH --output=/slurm_output/sgr/poincare/norm_array_%A_%a.out 
+#SBATCH --error=/slurm_output/sgr/poincare/norm_array_%A_%a.err  
 
 set -euo pipefail
 
@@ -27,14 +27,16 @@ export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
 
 # 2. Correctly create nested directories
 mkdir -p "$WANDB_CACHE_DIR"
-mkdir -p /scratch-shared/$USER/logs/sgr/poincare 
-mkdir -p /scratch-shared/$USER/output/sgr/poincare 
-mkdir -p /scratch-shared/$USER/failed_tasks/sgr/poincare
+mkdir -p slurm_output/sgr/poincare 
+mkdir -p failed_tasks/sgr/poincare
 
 TASKS_FILE="tasks/sgr_poincare_norm.txt"
 
 # 3. Extract the command
 COMMAND=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASKS_FILE")
+
+# Dynamically extract the Hydra run directory from the command string
+RUN_DIR=$(echo "$COMMAND" | grep -oP 'hydra.run.dir=\K\S+')
 
 echo "Starting Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Command: $COMMAND"
@@ -44,12 +46,29 @@ echo "--------------------------------------------------------"
 eval "$COMMAND"
 EXIT_CODE=$?
 
-# 5. Failure logic mapped to exact paths
-if [ $EXIT_CODE -ne 0 ]; then
+# If the exit code is 0, the job succeeded. Create the symlink.
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "Task completed successfully. Setting up metrics symlink..."
+    
+    LOCAL_SYMLINK_DIR="metrics_links/sgr/poincare"
+    mkdir -p "$LOCAL_SYMLINK_DIR"
+    
+    # Extract just the run name (e.g., euc_d2_s34) to cleanly name the local link
+    RUN_NAME=$(basename "$RUN_DIR")
+    
+    if [ -f "$RUN_DIR/metrics.json" ]; then
+        ln -sf "$RUN_DIR/metrics.json" "$LOCAL_SYMLINK_DIR/${RUN_NAME}_metrics.json"
+        echo "Symlink created: $LOCAL_SYMLINK_DIR/${RUN_NAME}_metrics.json"
+    else
+        echo "Warning: metrics.json not found in $RUN_DIR"
+    fi
+
+# If the exit code is not 0, the job failed.
+else
     echo "Task $SLURM_ARRAY_TASK_ID failed with exit code $EXIT_CODE."
     
-    cp "/scratch-shared/$USER/output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" /scratch-shared/$USER/failed_tasks/sgr/poincare/
-    cp "/scratch-shared/$USER/logs/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" /scratch-shared/$USER/failed_tasks/sgr/poincare/
+    cp "/slurm_output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" /failed_tasks/sgr/poincare/
+    cp "/slurm_output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" /failed_tasks/sgr/poincare/
     
     echo "Logs copied to failed_tasks/sgr/poincare/ directory."
 fi
