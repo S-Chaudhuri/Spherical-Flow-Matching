@@ -31,7 +31,7 @@ print(mean_x0, mean_x1)
 EOF
 )
 
-    echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/gtg/euclidean/general/euc_d${dim}_s${seed} general.manifold=euclidean general.dim=${dim} general.curvature=0.0 general.std_x0=${std_x0} general.std_x1=${std_x1} general.mean_x0=${mean_x0} general.mean_x1=${mean_x1} general.normalize_tangent_distributions=True" >> "$output_file"
+    echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/gtg/euclidean/norm/general/euc_d${dim}_s${seed} general.manifold=euclidean general.dim=${dim} general.curvature=0.0 general.std_x0=${std_x0} general.std_x1=${std_x1} general.mean_x0=${mean_x0} general.mean_x1=${mean_x1} general.normalize_tangent_distributions=True" >> "$output_file"
   
   done
 done
