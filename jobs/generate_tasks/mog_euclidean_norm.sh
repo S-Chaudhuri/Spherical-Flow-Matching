@@ -75,7 +75,7 @@ EOF
 )
         
         # Note: train.py doesn't override mean_x1 if x1_dist="mog"
-        echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/mog/euclidean/general/euc_d${dim}_n${n}_${balance}_s${seed} general.manifold=euclidean general.dim=${dim} general.curvature=0.0 general.x1_dist=mog general.std_x0=${std_x0} general.std_x1=${stds} general.weights=${weights} general.mean_x0=${means_x0} general.mean_x1=${means_x1} general.normalize_tangent_distributions=False" >> "$output_file"
+        echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/mog/euclidean/norm/euc_d${dim}_n${n}_${balance}_s${seed} general.manifold=euclidean general.dim=${dim} general.curvature=0.0 general.x1_dist=mog general.std_x0=${std_x0} general.std_x1=${stds} general.weights=${weights} general.mean_x0=${means_x0} general.mean_x1=${means_x1} general.normalize_tangent_distributions=False" >> "$output_file"
 
       done
     done
