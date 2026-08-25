@@ -9,7 +9,7 @@ dist=0.5
 std_x0=0.3
 std_x1=0.3
 
-output_file="tasks/mog_euclidean.txt"
+output_file="tasks/mog_euclidean_norm.txt"
 > "$output_file"
 
 for seed in "${seeds[@]}"; do
@@ -17,7 +17,7 @@ for seed in "${seeds[@]}"; do
     for n in "${modes[@]}"; do
       for balance in "${balances[@]}"; do
 
-        read means weights stds <<< $(python - <<EOF
+        read means_x0 means_x1 weights stds <<< $(python - <<EOF
 import numpy as np
 import json
 
@@ -62,17 +62,20 @@ else:
     elif n == 3: w = [1/4, 1/4, 2/4]
     elif n == 5: w = [1/8, 2/8, 3/8, 1/8, 1/8]
 
+x0 = np.zeros(dim)
+
 # 3. Format for Hydra
-means_str = "[" + ",".join(["[" + ",".join([f"{val:.7f}" for val in vec]) + "]" for vec in final_vectors]) + "]"
+means_x0_str = "[" + ",".join([f"{v:.7f}" for v in x0]) + "]"
+means_x1_str = "[" + ",".join(["[" + ",".join([f"{val:.7f}" for val in vec]) + "]" for vec in final_vectors]) + "]"
 weights_str = "[" + ",".join([f"{val:.4f}" for val in w]) + "]"
 stds_str = "[" + ",".join([f"{float($std_x1)}"] * n) + "]"
 
-print(means_str, weights_str, stds_str)
+print(means_x0_str, means_x1_str, weights_str, stds_str)
 EOF
 )
         
         # Note: train.py doesn't override mean_x1 if x1_dist="mog"
-        echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/mog/euclidean/general/euc_d${dim}_n${n}_${balance}_s${seed} general.manifold=euclidean general.dim=${dim} general.curvature=0.0 general.x1_dist=mog general.std_x0=${std_x0} general.std_x1=${stds} general.weights=${weights} general.mean_x1=${means} general.normalize_tangent_distributions=False" >> "$output_file"
+        echo "srun python train.py experiment=general_fm seed=${seed} hydra.run.dir=/scratch-shared/$USER/outputs/runs/mog/euclidean/general/euc_d${dim}_n${n}_${balance}_s${seed} general.manifold=euclidean general.dim=${dim} general.curvature=0.0 general.x1_dist=mog general.std_x0=${std_x0} general.std_x1=${stds} general.weights=${weights} general.mean_x0=${means_x0} general.mean_x1=${means_x1} general.normalize_tangent_distributions=False" >> "$output_file"
 
       done
     done
