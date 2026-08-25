@@ -1,12 +1,16 @@
 #!/bin/bash
 #SBATCH --job-name=sgr_poi_norm
-#SBATCH --time=08:00:00
-#SBATCH --partition=gpu_h100
+#SBATCH --time=00:30:00
+#SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=9
-#SBATCH --array=1-270
-#SBATCH --output=/slurm_output/sgr/poincare/norm_array_%A_%a.out 
-#SBATCH --error=/slurm_output/sgr/poincare/norm_array_%A_%a.err  
+#SBATCH --ntasks-per-node=2
+#SBATCH --array=1
+#SBATCH --output=slurm_output/sgr/poincare/norm_array_%A_%a.out 
+#SBATCH --error=slurm_output/sgr/poincare/norm_array_%A_%a.err  
+
+PROJECT_ROOT="$HOME/Spherical-Flow-Matching"
+TASKS_FILE="$PROJECT_ROOT/tasks/sgr_poincare_norm.txt"
 
 set -euo pipefail
 
@@ -22,25 +26,23 @@ conda install -y -n manifm -c conda-forge libstdcxx-ng libgcc-ng
 conda activate manifm
 set -u
 
-cd "$HOME/DL2_project/Spherical-Flow-Matching/riemannian-fm"
-export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
-
 # 2. Correctly create nested directories
+export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
 mkdir -p "$WANDB_CACHE_DIR"
-mkdir -p slurm_output/sgr/poincare 
-mkdir -p failed_tasks/sgr/poincare
-
-TASKS_FILE="tasks/sgr_poincare_norm.txt"
+mkdir -p "$PROJECT_ROOT/metrics_links/sgr/poincare"
 
 # 3. Extract the command
 COMMAND=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$TASKS_FILE")
 
 # Dynamically extract the Hydra run directory from the command string
-RUN_DIR=$(echo "$COMMAND" | grep -oP 'hydra.run.dir=\K\S+')
+RAW_RUN_DIR=$(echo "$COMMAND" | grep -oP 'hydra.run.dir=\K\S+')
+RUN_DIR=$(eval echo "$RAW_RUN_DIR")
 
 echo "Starting Task ID: $SLURM_ARRAY_TASK_ID"
 echo "Command: $COMMAND"
 echo "--------------------------------------------------------"
+
+cd "$PROJECT_ROOT/riemannian-fm"
 
 # 4. Execute the command
 eval "$COMMAND"
@@ -50,8 +52,7 @@ EXIT_CODE=$?
 if [ $EXIT_CODE -eq 0 ]; then
     echo "Task completed successfully. Setting up metrics symlink..."
     
-    LOCAL_SYMLINK_DIR="metrics_links/sgr/poincare"
-    mkdir -p "$LOCAL_SYMLINK_DIR"
+    LOCAL_SYMLINK_DIR="$PROJECT_ROOT/metrics_links/sgr/poincare"
     
     # Extract just the run name (e.g., euc_d2_s34) to cleanly name the local link
     RUN_NAME=$(basename "$RUN_DIR")
@@ -67,8 +68,9 @@ if [ $EXIT_CODE -eq 0 ]; then
 else
     echo "Task $SLURM_ARRAY_TASK_ID failed with exit code $EXIT_CODE."
     
-    cp "/slurm_output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" /failed_tasks/sgr/poincare/
-    cp "/slurm_output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" /failed_tasks/sgr/poincare/
+    mkdir -p "$PROJECT_ROOT/failed_tasks/sgr/poincare"
+    cp "$PROJECT_ROOT/slurm_output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.out" "$PROJECT_ROOT/failed_tasks/sgr/poincare/"
+    cp "$PROJECT_ROOT/slurm_output/sgr/poincare/norm_array_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.err" "$PROJECT_ROOT/failed_tasks/sgr/poincare/"
     
     echo "Logs copied to failed_tasks/sgr/poincare/ directory."
 fi
