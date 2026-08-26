@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=sgr_poi_norm
-#SBATCH --time=00:30:00
+#SBATCH --time=02:30:00
 #SBATCH --partition=gpu_a100
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=9
 #SBATCH --ntasks-per-node=2
-#SBATCH --array=1
+#SBATCH --array=1-270
 #SBATCH --output=slurm_output/sgr/poincare/norm_array_%A_%a.out 
 #SBATCH --error=slurm_output/sgr/poincare/norm_array_%A_%a.err  
 
@@ -27,6 +27,7 @@ conda activate manifm
 set -u
 
 # 2. Correctly create nested directories
+export HYDRA_FULL_ERROR=1
 export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
 mkdir -p "$WANDB_CACHE_DIR"
 mkdir -p "$PROJECT_ROOT/metrics_links/sgr/poincare"

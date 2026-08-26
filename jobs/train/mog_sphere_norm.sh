@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=mog_sph_norm
-#SBATCH --time=00:30:00            # Adjust as needed
+#SBATCH --time=02:30:00            # Adjust as needed
 #SBATCH --partition=gpu_a100       # Standard Snellius GPU partition
 #SBATCH --gpus=1                   # GPUs per task
 #SBATCH --cpus-per-task=9          # Standard CPU allocation for 1 GPU on Snellius
 #SBATCH --ntasks-per-node=2
-#SBATCH --array=1              
+#SBATCH --array=1-540              
 #SBATCH --output=slurm_output/mog/sphere/norm_array_%A_%a.out 
 #SBATCH --error=slurm_output/mog/sphere/norm_array_%A_%a.err  
 
@@ -25,6 +25,7 @@ conda activate manifm
 set -u
 
 # 2. Correctly create nested directories
+export HYDRA_FULL_ERROR=1
 export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
 mkdir -p "$WANDB_CACHE_DIR"
 mkdir -p "$PROJECT_ROOT/metrics_links/mog/sphere"

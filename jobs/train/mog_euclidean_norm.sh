@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=mog_euc
-#SBATCH --time=00:30:00            # Adjust as needed
-#SBATCH --partition=gpu_a100       # Standard Snellius GPU partition
+#SBATCH --time=01:00:00            # Adjust as needed
+#SBATCH --partition=gpu_h100       # Standard Snellius GPU partition
 #SBATCH --gpus=1                   # GPUs per task
 #SBATCH --cpus-per-task=9          # Standard CPU allocation for 1 GPU on Snellius
-#SBATCH --ntasks-per-node=2
-#SBATCH --array=1               
+#SBATCH --mem=128G
+#SBATCH --ntasks-per-node=1
+#SBATCH --array=1-108   
 #SBATCH --output=slurm_output/mog/euclidean/norm_array_%A_%a.out 
 #SBATCH --error=slurm_output/mog/euclidean/norm_array_%A_%a.err  
 
@@ -25,6 +26,7 @@ conda activate manifm
 set -u
 
 # 2. Correctly create nested directories
+export HYDRA_FULL_ERROR=1
 export WANDB_CACHE_DIR="/scratch-shared/$USER/wandb-cache"
 mkdir -p "$WANDB_CACHE_DIR"
 mkdir -p "$PROJECT_ROOT/metrics_links/mog/euclidean"
