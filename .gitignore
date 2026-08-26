@@ -29,3 +29,5 @@ scaling_plot_log.pdf
 *.yaml
 output/
 slurm_output/
+failed_tasks/
+metrics_links/
